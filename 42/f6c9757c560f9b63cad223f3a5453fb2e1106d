@@ -1,0 +1,41 @@
+README.md
+  s_28d8a426d303da::t_7c3ba746c6872f 16-18,27
+docs/VALIDATION.md
+  s_28d8a426d303da::t_cfa0b4150d2456 9,23-26
+server/app.ts
+  s_28d8a426d303da::t_cc9fc33d74873c 18,28-32,148-152,166-170,183-198,208,218-224
+server/domain.ts
+  s_28d8a426d303da::t_a1766f6f72cdbb 213-256,328
+server/local-testing.ts
+  s_28d8a426d303da::t_ffb0ead80b3cf8 1-25
+src/Admin.tsx
+  s_28d8a426d303da::t_745f6230133da6 22,41
+src/Auth.tsx
+  s_28d8a426d303da::t_d5c78ac07710d2 7,113
+src/TestingMode.tsx
+  s_28d8a426d303da::t_001236157a60af 1-74
+src/platform.ts
+  s_28d8a426d303da::t_dd4fa5d95faadf 116-117
+src/platform.web.ts
+  s_28d8a426d303da::t_1abf8b5f9e9fa9 67-69
+src/types.ts
+  s_28d8a426d303da::t_8672bbec88d6ba 110
+test/local-testing.test.ts
+  s_28d8a426d303da::t_c2880d00f91aa4 1-227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "42f6c9757c560f9b63cad223f3a5453fb2e1106d",
+  "prompts": {},
+  "sessions": {
+    "s_28d8a426d303da": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d1a9-c5bf-71c2-96ca-d3b28f3787d2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "marcoarevalo <marco.arevalo3426@gmail.com>"
+    }
+  }
+}
