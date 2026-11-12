@@ -129,7 +129,8 @@ export const money = (n: number, currency = "AUD") =>
     n / 100,
   );
 export const validity = (n: number) =>
-  new Date(n).toLocaleDateString("en-AU", {
+  new Date(n - 1).toLocaleDateString("en-AU", {
+    timeZone: "UTC",
     month: "2-digit",
     year: "2-digit",
   });

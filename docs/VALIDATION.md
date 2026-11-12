@@ -6,7 +6,7 @@ Executed during implementation on 13 November 2026 (Australia/Melbourne):
 - Production Webpack build passed.
 - Expo dependency compatibility check passed.
 - iOS and Android Hermes JavaScript exports passed, with local Inter fonts bundled.
-- 17 isolated domain/API tests passed (see final run).
+- 18 isolated domain/API tests passed (see final run).
 - Local in-app browser: invalid email message; six-digit email code paste; owner verification and restored session; completing an order; viewing completed order history; drawer navigation; menu-template layout; voucher-generation validation/organisation/summary steps; successful generation of two test vouchers after approval; customer login; live owner-generated menu; item variation and note selection; combined voucher balance and cart total.
 
 Browser testing caught and fixed stale session state routing after verification, root container height, radio accessibility state, voucher-table checkbox labels, divider scaling, and the back-arrow rotation. Existing local test data is not committed.
@@ -18,3 +18,5 @@ Not executed: live email delivery, live/test Stripe provider checkout, real Appl
 The supplied Figma contains mobile frames. Desktop behavior is adapted with a persistent navigation column at 1000 CSS pixels and wider content bounds. Customer item/cart, organisation and management pages extend the existing visual conventions because complete matching Figma frames/JPG references were not supplied.
 
 Responsive verification used an isolated local iframe harness at 320, 402 and 1280 CSS pixels. Narrow layouts stack cafe tiles and retain mobile navigation; desktop layouts show the persistent navigation column. The harness is not part of the product.
+
+The validity display has a regression test for the exclusive end-of-month UTC boundary, including year rollover.

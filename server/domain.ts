@@ -1107,7 +1107,7 @@ export class Domain {
           orgId: "demo-org",
           balance: [1500, 500, 200, 180][i],
           initialAmount: 1500,
-          expiresAt: Date.UTC(new Date().getUTCFullYear() + 1, 8, 1),
+          expiresAt: Date.UTC(new Date().getUTCFullYear() + 1, 9, 1),
           ...(i < 2 ? { email: "customer@cafe.test" } : {}),
         });
       const first = this.db.list<MenuItem>("menu")[0];

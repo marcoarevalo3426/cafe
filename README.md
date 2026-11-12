@@ -59,7 +59,7 @@ flowchart TD
 
 The API owns prices, order totals, voucher balances, role checks, cafe ownership, and recipient membership. Client values are never used as authoritative prices. SQLite `BEGIN IMMEDIATE` transactions make issuance, checkout fulfillment, sharing, and voucher deductions atomic. A unique database index protects six-character voucher codes; checkout IDs and idempotency keys prevent repeat fulfillment.
 
-Money is stored in integer cents. Checkout reserves vouchers while a card payment is pending, applies the earliest-expiring vouchers first, and deducts balances only on confirmed completion. Cancelled/expired payment sessions release their reservations. Reserved vouchers remain available to fulfillment even if a timely payment's webhook arrives after voucher expiry. An independent provider reconciliation pass handles missed webhooks.
+Money is stored in integer cents. Voucher month/year validity ends at the start of the next month in UTC, and the displayed validity shows the selected month. Checkout reserves vouchers while a card payment is pending, applies the earliest-expiring vouchers first, and deducts balances only on confirmed completion. Cancelled/expired payment sessions release their reservations. Reserved vouchers remain available to fulfillment even if a timely payment's webhook arrives after voucher expiry. An independent provider reconciliation pass handles missed webhooks.
 
 ## Implemented flows
 

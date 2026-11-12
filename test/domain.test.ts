@@ -1,3 +1,4 @@
+import { validity } from "../src/types";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Database } from "../server/db";
@@ -311,4 +312,9 @@ test("expired vouchers remain reserved until the provider checkout is resolved",
   d.cleanup();
   assert.equal(db.get("vouchers", v.id), undefined);
   db.close();
+});
+
+test("voucher validity displays the selected month at its exclusive UTC expiry boundary", () => {
+  assert.equal(validity(Date.UTC(2027, 11, 1)), "11/27");
+  assert.equal(validity(Date.UTC(2028, 0, 1)), "12/27");
 });
