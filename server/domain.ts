@@ -210,12 +210,50 @@ export class Domain {
           announcements: true,
           ...(admins.has(address) ? { role: "admin" as Role } : {}),
         });
-      assert(!user.disabled, "This account has been disabled.", 403);
-      const token = randomBytes(32).toString("hex");
-      this.db.sql
-        .prepare("INSERT INTO sessions VALUES(?,?,?)")
-        .run(digest(token), user.id, Date.now() + 30 * 86400000);
-      return { token, user };
+      return this.createSession(user);
+    });
+  }
+  private createSession(user: User, testing = false) {
+    assert(!user.disabled, "This account has been disabled.", 403);
+    const token = (testing ? "testing_" : "") + randomBytes(32).toString("hex");
+    this.db.sql
+      .prepare("INSERT INTO sessions VALUES(?,?,?)")
+      .run(digest(token), user.id, Date.now() + 30 * 86400000);
+    return { token, user };
+  }
+  testingLogin(role: unknown) {
+    assert(this.demo, "Testing mode is unavailable.", 404);
+    assert(
+      typeof role === "string" &&
+        ["customer", "owner", "organisation", "admin"].includes(role),
+      "Choose a test account.",
+    );
+    return this.db.atomic(() => {
+      const fixtureStore = this.db.get<Store>("stores", "demo-cafe");
+      assert(
+        fixtureStore?.ownerId === "demo-owner",
+        "Demo accounts are not available in this database.",
+        404,
+      );
+      const accounts: Record<string, string> = {
+        owner: "demo-owner",
+        customer: "demo-customer-user",
+        organisation: "demo-organisation-user",
+        admin: "demo-admin-user",
+      };
+      let user = this.db.get<User>("users", accounts[role]);
+      if (role === "admin" && !user)
+        user = this.db.put("users", {
+          id: accounts.admin,
+          email: "admin@cafe.test",
+          role: "admin",
+          name: "Demo administrator",
+          phone: "",
+          orderNotifications: false,
+          announcements: false,
+        } as User);
+      assert(user?.role === role, "Demo account unavailable.", 404);
+      return this.createSession(user, true);
     });
   }
   changeEmailRequest(user: User, raw: unknown) {
@@ -287,7 +325,7 @@ export class Domain {
     });
   }
   authenticate(token?: string) {
-    if (!token) return null;
+    if (!token || (token.startsWith("testing_") && !this.demo)) return null;
     const session = this.db.sql
       .prepare("SELECT user_id FROM sessions WHERE hash=? AND expires>?")
       .get(digest(token), Date.now()) as any;

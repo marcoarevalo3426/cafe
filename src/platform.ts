@@ -113,3 +113,5 @@ export const clearCheckoutParams = () => {
 };
 
 export const preferredStoreId = Constants.expoConfig?.extra?.storeId ?? "";
+
+export const localTestingClient = () => __DEV__;

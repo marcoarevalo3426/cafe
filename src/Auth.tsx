@@ -4,6 +4,7 @@ import { Box, Copy, Card, Btn, Field, ErrorText, Small, Link } from "./ui";
 import { api, setSession } from "./api";
 import { emailValid, type Role } from "./types";
 import { useApp } from "./context";
+import TestingMode from "./TestingMode";
 export default function Auth() {
   const { data, refresh, nav, run } = useApp();
   const [stage, setStage] = useState<"email" | "verify" | "role">(
@@ -109,6 +110,7 @@ export default function Auth() {
             <Btn disabled={busy} onPress={() => void send()}>
               {busy ? "Sending…" : "Sign up"}
             </Btn>
+            <TestingMode />
             {error && <ErrorText>{error}</ErrorText>}
           </>
         ) : stage === "verify" ? (

@@ -6,7 +6,7 @@ Executed during implementation on 13 November 2026 (Australia/Melbourne):
 - Production Webpack build passed.
 - Expo dependency compatibility check passed.
 - iOS and Android Hermes JavaScript exports passed, with local Inter fonts bundled.
-- 18 isolated domain/API tests passed (see final run).
+- 23 isolated domain/API tests passed (see final run).
 - Local in-app browser: invalid email message; six-digit email code paste; owner verification and restored session; completing an order; viewing completed order history; drawer navigation; menu-template layout; voucher-generation validation/organisation/summary steps; successful generation of two test vouchers after approval; customer login; live owner-generated menu; item variation and note selection; combined voucher balance and cart total.
 
 Browser testing caught and fixed stale session state routing after verification, root container height, radio accessibility state, voucher-table checkbox labels, divider scaling, and the back-arrow rotation. Existing local test data is not committed.
@@ -20,3 +20,7 @@ The supplied Figma contains mobile frames. Desktop behavior is adapted with a pe
 Responsive verification used an isolated local iframe harness at 320, 402 and 1280 CSS pixels. Narrow layouts stack cafe tiles and retain mobile navigation; desktop layouts show the persistent navigation column. The harness is not part of the product.
 
 The validity display has a regression test for the exclusive end-of-month UTC boundary, including year rollover.
+
+Local Testing mode update: signup and management share a four-role demo account picker. Added HTTP coverage for all roles and native session tokens, production/demo-disabled rejection, public-host and remote-peer rejection, forged forwarding headers, and rejection of local test sessions on public requests.
+
+Browser verification confirmed the Testing mode button on signup, direct demo Admin login, the button on management, switching from Admin to Customer, and logout back to signup. Webpack and iOS/Android bundle exports passed for this change.

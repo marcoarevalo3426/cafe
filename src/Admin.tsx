@@ -19,6 +19,7 @@ import { api } from "./api";
 import { money, type User } from "./types";
 import { chooseFile, exportJSON } from "./platform";
 import { parseCafeImport } from "./import";
+import TestingMode from "./TestingMode";
 export default function Admin() {
   const { data, run, refresh, nav } = useApp();
   const [tab, setTab] = useState("Cafes"),
@@ -37,6 +38,7 @@ export default function Admin() {
     }, message);
   return (
     <Section>
+      <TestingMode />
       <Select
         label="Manage"
         value={tab}

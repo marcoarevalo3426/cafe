@@ -15,6 +15,7 @@ import {
   type Checkout,
 } from "./domain";
 import { checkout, stripe, customer, getCards } from "./integrations";
+import { isLocalTestingRequest } from "./local-testing";
 import type { User, Store, Voucher, Organisation } from "../src/types";
 export function createApp(
   d: Domain,
@@ -24,6 +25,11 @@ export function createApp(
   }: { origin?: string; production?: boolean } = {},
 ) {
   const app = express();
+  const testingAvailable = (req: express.Request) =>
+    d.demo &&
+    !production &&
+    process.env.NODE_ENV !== "production" &&
+    isLocalTestingRequest(req);
   app.disable("x-powered-by");
   if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   app.use(
@@ -139,7 +145,11 @@ export function createApp(
       .map((s) => s.trim())
       .find((s) => s.startsWith("cafe_session="))
       ?.slice(13);
-    res.locals.user = d.authenticate(bearer ?? cookie);
+    const sessionToken = bearer ?? cookie;
+    res.locals.user =
+      sessionToken?.startsWith("testing_") && !testingAvailable(req)
+        ? null
+        : d.authenticate(sessionToken);
     next();
   });
   const auth = (req: any, res: any, next: any) => {
@@ -153,16 +163,11 @@ export function createApp(
     standardHeaders: "draft-8",
     legacyHeaders: false,
   });
-  app.post("/api/auth/request", loginLimit, (req, res) => {
-    assert(
-      d.demo || (process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
-      "Email sign-in is not configured yet.",
-      503,
-    );
-    res.json(d.requestCode(req.body.email));
-  });
-  app.post("/api/auth/verify", loginLimit, (req, res) => {
-    const result = d.verify(req.body.email, req.body.code);
+  const respondSession = (
+    req: express.Request,
+    res: express.Response,
+    result: ReturnType<Domain["verify"]>,
+  ) => {
     res.cookie("cafe_session", result.token, {
       httpOnly: true,
       secure: production,
@@ -175,6 +180,22 @@ export function createApp(
       token:
         req.headers["x-cafe-client"] === "native" ? result.token : undefined,
     });
+  };
+  app.post("/api/auth/testing", loginLimit, (req, res) => {
+    assert(testingAvailable(req), "Testing mode is unavailable.", 404);
+    respondSession(req, res, d.testingLogin(req.body.role));
+  });
+  app.post("/api/auth/request", loginLimit, (req, res) => {
+    assert(
+      d.demo || (process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+      "Email sign-in is not configured yet.",
+      503,
+    );
+    res.json(d.requestCode(req.body.email));
+  });
+  app.post("/api/auth/verify", loginLimit, (req, res) => {
+    const result = d.verify(req.body.email, req.body.code);
+    respondSession(req, res, result);
   });
   app.post("/api/auth/logout", auth, (_req, res) => {
     d.logout(res.locals.user);
@@ -184,7 +205,7 @@ export function createApp(
   app.post("/api/auth/role", auth, (req, res) => {
     res.json(d.db.atomic(() => d.setRole(res.locals.user, req.body.role)));
   });
-  app.get("/api/bootstrap", async (_req, res) => {
+  app.get("/api/bootstrap", async (req, res) => {
     const result = d.bootstrap(res.locals.user);
     let cards: Awaited<ReturnType<typeof getCards>> = [];
     let paymentWarning: string | undefined;
@@ -194,7 +215,13 @@ export function createApp(
       paymentWarning =
         "Saved cards are temporarily unavailable. Please try again.";
     }
-    res.json({ ...result, paymentsEnabled: !!stripe, cards, paymentWarning });
+    res.json({
+      ...result,
+      paymentsEnabled: !!stripe,
+      cards,
+      paymentWarning,
+      testingModeAvailable: testingAvailable(req),
+    });
   });
   app.post("/api/menu/template", auth, (req, res) => {
     d.db.atomic(() => d.addTemplate(res.locals.user, text(req.body.name)));

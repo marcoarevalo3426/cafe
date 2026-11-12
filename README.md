@@ -13,7 +13,9 @@ npm ci
 DEV_DEMO=1 npm run dev
 ```
 
-Open <http://localhost:8080>. The API listens on port 4000. The demo flag must be explicit; it is rejected in production. Demo verification codes appear below the six code inputs. Email delivery is simulated in this mode.
+Open <http://localhost:8080>. The API listens on port 4000.
+
+For quick local testing, click **Testing mode** in the signup form and choose Customer, Cafe owner, Organisation, or Admin. The same button appears on the admin management page to switch test accounts. This skips email verification for fixed demo accounts only; the local admin uses `admin@cafe.test`. The button and test login require `DEV_DEMO=1`, a non-production API, and a direct loopback connection using localhost, 127.0.0.1, or ::1. Native debug builds can use the shortcut when connected to that loopback API. Test sessions are rejected outside this local environment. The demo flag must be explicit; it is rejected in production. Demo verification codes appear below the six code inputs. Email delivery is simulated in this mode.
 
 | Demo role | Email |
 | --- | --- |
@@ -22,7 +24,7 @@ Open <http://localhost:8080>. The API listens on port 4000. The demo flag must b
 | Organisation | organisation@cafe.test |
 | Administrator | marco.arevalo3426@gmail.com or marevalo@nepgroup.com |
 
-Use any new email to exercise registration and role selection. Only the two administrator emails become administrators after verification. In production they must receive and verify real email codes. New owners receive their own empty cafe; the Gordon demo data belongs only to the demo owner. Organisation accounts can purchase and allocate vouchers after a cafe invites them.
+Use any new email to exercise registration and role selection. In production, only the two administrator emails become administrators, and they must receive and verify real email codes. New owners receive their own empty cafe; the Gordon demo data belongs only to the demo owner. Organisation accounts can purchase and allocate vouchers after a cafe invites them.
 
 The local database is `data/cafe.sqlite`; it is excluded from Git. Unit tests use separate in-memory databases and never use the demo or production database.
 

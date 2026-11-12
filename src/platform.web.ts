@@ -64,3 +64,6 @@ export const clearCheckoutParams = () =>
 export const prepareFonts = async () => {};
 
 export const preferredStoreId = process.env.CAFE_STORE_ID ?? "";
+
+export const localTestingClient = () =>
+  ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
