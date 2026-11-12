@@ -1,0 +1,33 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DEV_DEMO: '0'
+      HOST: 0.0.0.0
+      DATABASE_PATH: /app/data/cafe.sqlite
+    volumes:
+      - cafe-data:/app/data
+    expose:
+      - '4000'
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to your domain name}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  cafe-data:
+  caddy-data:
+  caddy-config:

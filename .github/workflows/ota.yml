@@ -1,0 +1,32 @@
+name: Publish Expo update
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        type: choice
+        options: [preview, production]
+        default: preview
+        required: true
+permissions:
+  contents: read
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.channel }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - name: Publish runtime-compatible JavaScript update
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_EAS_PROJECT_ID: ${{ vars.EXPO_PUBLIC_EAS_PROJECT_ID }}
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+          ANDROID_PACKAGE: ${{ vars.ANDROID_PACKAGE }}
+          UPDATE_CHANNEL: ${{ inputs.channel }}
+        run: npx eas update --channel "$UPDATE_CHANNEL" --message "$GITHUB_SHA" --non-interactive

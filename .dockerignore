@@ -1,0 +1,11 @@
+node_modules
+.git
+.env
+.expo
+android
+ios
+data
+dist
+work
+test-results
+*.log
