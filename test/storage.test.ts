@@ -25,23 +25,6 @@ test("record upserts preserve order and unique email/code constraints cannot ove
     assert.equal(await db.get("users", "two"), undefined);
     await db.put("vouchers", { id: "one", code: "abc123" });
     await assert.rejects(db.put("vouchers", { id: "two", code: "abc123" }));
-    await db.put("recipients", {
-      id: "one",
-      orgId: "org1",
-      email: "recipient@example.com",
-    });
-    await assert.rejects(
-      db.put("recipients", {
-        id: "two",
-        orgId: "org1",
-        email: "recipient@example.com",
-      }),
-    );
-    await db.put("recipients", {
-      id: "three",
-      orgId: "org2",
-      email: "recipient@example.com",
-    });
     await db.put("ordered", { id: "b", value: 1 });
     await db.put("ordered", { id: "a", value: 2 });
     await db.put("ordered", { id: "b", value: 3 });

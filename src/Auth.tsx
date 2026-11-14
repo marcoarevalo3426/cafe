@@ -21,6 +21,9 @@ export default function Auth() {
     [now, setNow] = useState(Date.now());
   const fields = useRef<(React.ComponentRef<typeof TextInput> | null)[]>([]);
   useEffect(() => {
+    setStage(data.user ? "role" : "email");
+  }, [data.user?.id]);
+  useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -56,11 +59,9 @@ export default function Auth() {
       nav(
         result.user.role === "owner"
           ? "Orders"
-          : result.user.role === "organisation"
-            ? "Vouchers"
-            : result.user.role === "admin"
-              ? "Management"
-              : "My Cafe",
+          : result.user.role === "admin"
+            ? "Management"
+            : "My Cafe",
       );
   }
   async function verify() {
@@ -89,9 +90,7 @@ export default function Auth() {
           ? "Management"
           : role === "owner"
             ? "Orders"
-            : role === "organisation"
-              ? "Vouchers"
-              : "My Cafe",
+            : "My Cafe",
       );
     });
   }
@@ -127,7 +126,7 @@ export default function Auth() {
             <Btn disabled={busy} onPress={() => void send()}>
               {busy ? "Sending…" : "Sign up"}
             </Btn>
-            <TestingMode />
+            <TestingMode email={email} />
             {data.testEmailSignInAvailable && (
               <Small>
                 Designated test accounts can sign in without an email code.
@@ -216,6 +215,9 @@ export default function Auth() {
                 {account.label}
               </Btn>
             ))}
+            {data.user && data.accountRoles?.includes("admin") && (
+              <TestingMode />
+            )}
             {data.user && <Link onPress={() => void run(logout)}>Log out</Link>}
           </>
         )}

@@ -4,7 +4,7 @@ import { Domain, digest, admins } from "../server/domain";
 import { Database } from "./support/database";
 import type { Session } from "../server/storage";
 import type { Store, User } from "../src/types";
-import { accountChoices } from "../src/account-choices";
+import { accountChoices, testingAccountChoices } from "../src/account-choices";
 
 test("both verified allowed emails choose a session account, retain their cafe and cannot use admin actions as a customer", async () => {
   const db = new Database();
@@ -17,6 +17,11 @@ test("both verified allowed emails choose a session account, retain their cafe a
       const pending = (await d.authenticate(login.token))!;
       const initial = await d.bootstrap(pending);
       assert.deepEqual(initial.accountRoles, ["owner", "customer", "admin"]);
+      assert.ok(
+        testingAccountChoices(initial).some(
+          (choice) => choice.role === "admin",
+        ),
+      );
       assert.equal(initial.users, undefined);
       assert.deepEqual(
         accountChoices(initial).map((x) => x.label),
@@ -29,6 +34,11 @@ test("both verified allowed emails choose a session account, retain their cafe a
       await d.db.atomic(() => d.addTemplate(owner, "Coffee"));
       const count = (await db.list("menu")).length;
       const customer = await d.chooseAccount(owner, "customer", login.token);
+      assert.ok(
+        testingAccountChoices(await d.bootstrap(customer)).some(
+          (choice) => choice.role === "admin",
+        ),
+      );
       assert.equal((await d.authenticate(login.token))?.role, "customer");
       assert.throws(() => d.require(customer, ["admin"]));
       assert.throws(() => d.require(customer, ["owner"]));
@@ -67,6 +77,14 @@ test("ordinary accounts never receive Admin choices and cannot select Admin or c
     const login = await d.verify("ordinary@example.com", otp.developmentCode);
     const data = await d.bootstrap(login.user);
     assert.deepEqual(data.accountRoles, []);
+    assert.ok(
+      !testingAccountChoices(data).some((choice) => choice.role === "admin"),
+    );
+    assert.ok(
+      !testingAccountChoices({ user: null, accountRoles: ["admin"] }).some(
+        (choice) => choice.role === "admin",
+      ),
+    );
     assert.ok(!accountChoices(data).some((x) => x.role === "admin"));
     assert.ok(
       !accountChoices({ user: null, accountRoles: ["admin"] }).some(

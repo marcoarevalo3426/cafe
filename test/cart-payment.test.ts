@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cartPaymentMethod, cartVoucherBalance } from "../src/cart-payment";
-import type { Voucher } from "../src/types";
+import type { Voucher, VerifiedVoucher } from "../src/types";
 
 test("cart defaults to vouchers for positive credit and card for zero credit", () => {
   assert.equal(cartPaymentMethod(1500, "cafe"), "voucher");
@@ -33,7 +33,6 @@ test("cart credit includes only the customer's usable cafe vouchers and this che
   const voucher: Voucher = {
     id: "one",
     code: "abc123",
-    orgId: "org",
     storeId: "cafe",
     email: "customer@example.com",
     balance: 500,
@@ -66,4 +65,84 @@ test("cart credit includes only the customer's usable cafe vouchers and this che
     1200,
   );
   assert.equal(cartVoucherBalance(vouchers, "cafe", undefined, "", 1000), 0);
+});
+
+test("verified bearer credit updates the cart without counting a wallet voucher twice", () => {
+  const own: Voucher = {
+    id: "own",
+    code: "own001",
+    storeId: "cafe",
+    email: "customer@example.com",
+    balance: 500,
+    initialAmount: 500,
+    expiresAt: 2000,
+  };
+  const verified: VerifiedVoucher = {
+    id: "bearer",
+    code: "bearer",
+    storeId: "cafe",
+    balance: 1000,
+    expiresAt: 2000,
+    currency: "AUD",
+  };
+  const balance = (code: VerifiedVoucher | null) =>
+    cartVoucherBalance([own], "cafe", own.email, "", 1000, code);
+  assert.equal(balance(verified), 1500);
+  assert.equal(balance({ ...verified, id: own.id, balance: 500 }), 500);
+  assert.equal(balance({ ...verified, storeId: "other" }), 500);
+  assert.equal(balance({ ...verified, expiresAt: 1000 }), 500);
+  assert.equal(balance({ ...verified, balance: 0 }), 500);
+  assert.equal(balance(null), 500);
+});
+
+test("verification replaces stale wallet credit so positive verified vouchers remain selectable", () => {
+  const own: Voucher = {
+    id: "own",
+    code: "own001",
+    storeId: "cafe",
+    email: "customer@example.com",
+    balance: 0,
+    initialAmount: 1000,
+    expiresAt: 2000,
+  };
+  const verified: VerifiedVoucher = { ...own, balance: 700, currency: "AUD" };
+  assert.equal(
+    cartPaymentMethod(
+      cartVoucherBalance([own], "cafe", own.email, "", 1000),
+      "cafe",
+    ),
+    "card",
+  );
+  const balance = cartVoucherBalance(
+    [own],
+    "cafe",
+    own.email,
+    "",
+    1000,
+    verified,
+  );
+  assert.equal(balance, 700);
+  assert.equal(cartPaymentMethod(balance, "cafe"), "voucher");
+  assert.equal(
+    cartVoucherBalance(
+      [{ ...own, balance: 1000 }],
+      "cafe",
+      own.email,
+      "",
+      1000,
+      verified,
+    ),
+    700,
+  );
+  assert.equal(
+    cartVoucherBalance(
+      [{ ...own, reservedBy: "another-checkout" }],
+      "cafe",
+      own.email,
+      "",
+      1000,
+      verified,
+    ),
+    0,
+  );
 });

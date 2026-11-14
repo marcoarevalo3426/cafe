@@ -37,10 +37,11 @@ import {
 import type { Bootstrap, CartLine, MenuItem, Order } from "./types";
 import Auth from "./Auth";
 import MenuBuilder from "./MenuBuilder";
-import { Vouchers, GenerateVouchers, Recipients } from "./Vouchers";
+import { Vouchers, GenerateVouchers } from "./Vouchers";
 import { MyCafe, CafeMenu, MenuItemScreen, Cart, Success } from "./Customer";
 import { Profile, Settings, PaymentMethods, Feedback } from "./Account";
 import Admin from "./Admin";
+import TestingMode from "./TestingMode";
 import { APP_NAME } from "./brand";
 const initial: Bootstrap = {
   user: null,
@@ -48,8 +49,6 @@ const initial: Bootstrap = {
   menu: [],
   orders: [],
   vouchers: [],
-  organisations: [],
-  recipients: [],
   templates: [],
   demo: false,
   paymentsEnabled: false,
@@ -71,11 +70,9 @@ const home = (data: Bootstrap) =>
     ? "Sign up"
     : data.user.role === "owner"
       ? "Orders"
-      : data.user.role === "organisation"
-        ? "Vouchers"
-        : data.user.role === "admin"
-          ? "Management"
-          : "My Cafe";
+      : data.user.role === "admin"
+        ? "Management"
+        : "My Cafe";
 export default function App() {
   const [data, setData] = useState(initial),
     [page, setPage] = useState("Sign up"),
@@ -261,7 +258,6 @@ export default function App() {
     setStore(id);
   }
   const owner = data.user?.role === "owner",
-    org = data.user?.role === "organisation",
     admin = data.user?.role === "admin";
   const menu = owner
     ? [
@@ -273,26 +269,17 @@ export default function App() {
         "Settings",
         "Send feedback",
       ]
-    : org
-      ? [
-          "Generate vouchers",
-          "Vouchers",
-          "Recipients",
+    : admin
+      ? ["Management", "Vouchers", "Generate vouchers", "Profile", "Settings"]
+      : [
+          "My Cafe",
+          "Order history",
           "Profile",
+          "Payment method",
+          "Vouchers",
           "Settings",
-          "Send feedback",
-        ]
-      : admin
-        ? ["Management", "Vouchers", "Generate vouchers", "Profile", "Settings"]
-        : [
-            "My Cafe",
-            "Order history",
-            "Profile",
-            "Payment method",
-            "Vouchers",
-            "Settings",
-            "Submit feedback",
-          ];
+          "Submit feedback",
+        ];
   const title =
     page === "Menu item"
       ? (selectedItem?.subcategory ?? "Menu")
@@ -358,6 +345,9 @@ export default function App() {
             </Copy>
           </Pressable>
         )}
+        {!!data.user &&
+          data.accountRoles?.includes("admin") &&
+          data.user.role !== "admin" && <TestingMode />}
         <Pressable
           accessibilityRole="button"
           onPress={() => (data.user ? void run(logout) : nav("Sign up"))}
@@ -396,9 +386,6 @@ export default function App() {
       break;
     case "Generate vouchers":
       content = <GenerateVouchers />;
-      break;
-    case "Recipients":
-      content = <Recipients />;
       break;
     case "Profile":
       content = <Profile />;
@@ -511,7 +498,7 @@ export default function App() {
                     style={{
                       position: "absolute",
                       top: 19,
-                      ...(owner || org || admin ? { right: 14 } : { left: 14 }),
+                      ...(owner || admin ? { right: 14 } : { left: 14 }),
                       width: 44,
                       height: 44,
                       justifyContent: "center",
@@ -529,7 +516,7 @@ export default function App() {
                     style={{
                       position: "absolute",
                       top: 20,
-                      ...(owner || org || admin ? { left: 16 } : { right: 16 }),
+                      ...(owner || admin ? { left: 16 } : { right: 16 }),
                       minHeight: 44,
                       justifyContent: "center",
                     }}

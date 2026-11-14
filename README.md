@@ -20,16 +20,15 @@ npm run dev
 
 Open <http://localhost:8080>. The API listens on port 4000.
 
-For quick local testing, click **Testing mode** in the signup form and choose Customer, Cafe owner, or Organisation. The same button appears on the admin management page to switch test accounts. This skips email verification for fixed demo accounts only; Admin access requires signing in with one of the two allowed emails; the local demo displays its verification code without sending email. The button and test login require `DEV_DEMO=1`, a non-production API, and a direct loopback connection using localhost, 127.0.0.1, or ::1. Native debug builds can use the shortcut when connected to that loopback API. Test sessions are rejected outside this local environment. The demo flag must be explicit; it is rejected in production. Demo verification codes appear below the six code inputs. Email delivery is simulated in this mode.
+For quick local testing, click **Testing mode** and choose Customer or Cafe owner. To use a designated account, enter `marco.arevalo3426@gmail.com` or `marevalo@nepgroup.com` and click **Testing mode** to open Cafe Owner / Customer / Admin selection without an email code. The same button is available after sign-in. Local shortcuts require `DEV_DEMO=1`, a non-production API, and a direct loopback connection; their sessions cannot be used on public hosts. Email delivery is simulated locally.
 
 | Demo role | Email |
 | --- | --- |
 | Cafe owner | owner@cafe.test |
 | Customer | customer@cafe.test |
-| Organisation | organisation@cafe.test |
-| Administrator | Verify marco.arevalo3426@gmail.com or marevalo@nepgroup.com, then choose Admin |
+| Administrator | Enter either allowlisted email and click Testing mode, then choose Admin |
 
-Use any new email to exercise registration and role selection. In production, only the two administrator emails become administrators, and they must receive and verify real email codes. New owners receive their own empty cafe; the Gordon demo data belongs only to the demo owner. Organisation accounts can purchase and allocate vouchers after a cafe invites them.
+Use any new email to exercise registration and Customer/Cafe Owner selection. Administrator access remains restricted to the two designated emails. New owners receive their own empty cafe; the Gordon demo data belongs only to the demo owner.
 
 During the test phase, `marco.arevalo3426@gmail.com` and `marevalo@nepgroup.com` can sign in without an email code. Other accounts still verify their email. The bypass requires both `APP_STAGE=test` and `TEST_EMAIL_SIGN_IN=allowlisted`; the default is disabled. Set the private deployment setting to `disabled` and redeploy to restore verification; bypass-created sessions then stop working. After either allowlisted account signs in, the app shows **Choose account** with **Cafe Owner**, **Customer**, and **Admin**. The navigation offers **Switch account** for those authenticated emails. Each session keeps its own active role; owner/customer mode has no admin permissions. Owner mode creates one cafe if needed and preserves it across switches. New sign-ins ask again, and existing sessions from earlier versions show the chooser. Other emails keep the ordinary signup choices and cannot select Admin, including through Testing mode or a forged API request.
 
@@ -67,20 +66,20 @@ flowchart TD
     GH[GitHub — validation / optional OTA workflow] --> OTA
 ```
 
-The API owns prices, order totals, voucher balances, role checks, cafe ownership, and recipient membership. Client values are never used as authoritative prices. MySQL InnoDB transactions and unique indexes protect issuance and balances. The DynamoDB test adapter preserves these domain boundaries with conditional revision checks, atomic transactions, and uniqueness checks. Ordered collections are split into 300 KB binary chunks. It retries conflicting commits and supports nested rollback; it is intended for small test datasets. Checkout IDs and idempotency keys prevent repeat fulfillment.
+The API owns prices, order totals, voucher balances, role checks, cafe ownership, and voucher ownership. Client values are never used as authoritative prices. MySQL InnoDB transactions and unique indexes protect issuance and balances. The DynamoDB test adapter preserves these domain boundaries with conditional revision checks, atomic transactions, and uniqueness checks. Ordered collections are split into 300 KB binary chunks. It retries conflicting commits and supports nested rollback; it is intended for small test datasets. Checkout IDs and idempotency keys prevent repeat fulfillment.
 
 Money is stored in integer cents. Voucher month/year validity ends at the start of the next month in UTC, and the displayed validity shows the selected month. Checkout reserves vouchers while a card payment is pending, applies the earliest-expiring vouchers first, and deducts balances only on confirmed completion. Cancelled/expired payment sessions release their reservations. Reserved vouchers remain available to fulfillment even if a timely payment's webhook arrives after voucher expiry. An independent provider reconciliation pass handles missed webhooks.
 
 ## Implemented flows
 
 - Email signup/sign-in, exact invalid-email/code messages, six code fields, cryptographically random six-digit codes, three-minute expiry, resend cooldown, five verification attempts, and persistent 30-day sessions. Web uses an HttpOnly SameSite cookie; native uses SecureStore. Logout revokes every session and registered push token for that user.
-- Customer, cafe owner, and invited organisation accounts; server-only administrator role. Guest cafe browsing and protected cart/account pages.
+- Customer and cafe owner accounts, with administrator access restricted to the two designated emails. Guest cafe browsing and protected cart/account pages.
 - Owner orders, newest first; tapping an order completes it; the fixed history footer remains visible. Owner history displays today's completed orders. Customers see their own order history and status.
 - Seven menu template categories, category/subcategory deletion confirmations, editable item groups, up to 30 variations per item group, reusable item templates, and customer menus generated from owner data.
-- Item variations, quantities and notes, cart modifications, server-calculated checkout, combined voucher balances, split voucher/card payments, order receipts, and a payment-success screen. The cart defaults to Voucher when usable credit is positive and Card / Apple Pay / Google Pay at zero. A single radio selection can be changed manually; voucher shortfalls continue through secure card/wallet checkout.
-- Voucher generation from 1 to 100 vouchers per request, minimum $10 face value, month/year validity, existing/new organisations with an optional email for owner/admin issuance, explicit cash-received confirmation for owners, card checkout selected by default, unique lowercase alphanumeric codes, and invitations/receipts when an organisation email is provided. Only one payment method can be selected. Blank email creates an organisation and vouchers without an empty user account or email jobs.
-- Voucher sorting, bulk selection/deletion, organisation allocation, recipient CRUD/search/sort, and same-organisation sharing. Expired and depleted vouchers are removed and unlink automatically. Pending-payment vouchers cannot be shared/deleted.
-- Store name/address/logo/currency/contact details, organisation/contact profiles, verified email changes, feedback ratings/subjects/messages, and notification preferences.
+- Item variations, quantities and notes, cart modifications, server-calculated checkout, combined voucher balances, split voucher/card payments, order receipts, and a payment-success screen. The cart defaults to Voucher when usable credit is positive and Card / Apple Pay / Google Pay at zero. A single radio selection can be changed manually; voucher shortfalls continue through secure card/wallet checkout. Any enabled signed-in account can place an order without changing its active account selection.
+- Voucher generation from 1 to 100 vouchers per request, minimum $10 face value, month/year validity, explicit cash-received confirmation for owners, Card / Apple Pay / Google Pay selected by default, and unique lowercase alphanumeric codes. Issued vouchers belong directly to the generating account and receive a personal receipt. Existing voucher credit can fund issuance; any shortfall uses card checkout.
+- Voucher sorting, code display, bulk selection/deletion, and sharing to any valid email. Verifying a valid code assigns it to the signed-in user and refreshes their wallet. Expired, empty, wrong-cafe and reserved codes cannot be claimed; pending-payment credit cannot be shared or deleted.
+- Store name/address/logo/currency/contact details, personal profiles, verified email changes, feedback ratings/subjects/messages, and notification preferences.
 - Management restricted to the two allowlisted administrator emails (verification is required outside the explicitly enabled test bypass): cafe CSV/JSON import, account CRUD and mobile-number fields, role assignment, subscription status/price management, feedback, announcements, error logs, and exportable configurations for separate branded app builds.
 - Native button/page/modal transitions, progress indicators, a slide-in drawer, reduced-motion support for page/drawer transitions, and responsive desktop navigation. Native image/document pickers are included.
 
@@ -177,3 +176,7 @@ npx expo export --platform ios --platform android --output-dir native-export
 The suite covers OTP expiry/attempts, session revocation, role boundaries, cafe isolation, voucher uniqueness and limits, split deductions, duplicate requests, reservation cancellation/expiry, sharing membership, recipient unlinking, authoritative pricing, bulk rollback, retention, notification opt-out, email changes, HTTP cookies/access control, and CSV parsing.
 
 See [validation notes](docs/VALIDATION.md) for executed checks and remaining device/provider verification. Native JavaScript export verifies bundling; it does not replace an installed iOS/Android device test or signed binary build.
+
+## Direct voucher accounts upgrade
+
+Startup runs an idempotent compatibility migration: former Organisation users become Customers, voucher links become direct email assignments, and pending paid checkout details remain usable. Original records are archived in `legacy_archive` before retired entities and fields are removed. Existing voucher balances, validity and reservations are preserved. See `docs/AWS-TEST.md` for deployment and database replacement instructions.

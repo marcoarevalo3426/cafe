@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, ScrollView } from "react-native";
 import {
   Box,
   Row,
@@ -19,7 +19,8 @@ import {
 } from "./ui";
 import { useApp } from "./context";
 import { api, requestKey } from "./api";
-import { emailValid, money, validity, type Voucher } from "./types";
+import { money, validity, type Voucher, type VerifiedVoucher } from "./types";
+import { VoucherCodeField } from "./VoucherCodeField";
 import { openLink } from "./platform";
 export function Vouchers() {
   const { data, nav, run, refresh } = useApp();
@@ -29,10 +30,8 @@ export function Vouchers() {
     [direction, setDirection] = useState(1),
     [share, setShare] = useState<Voucher | null>(null),
     [address, setAddress] = useState(""),
-    [recipient, setRecipient] = useState(""),
     [confirm, setConfirm] = useState(false);
-  const owner = role === "owner" || role === "admin",
-    org = role === "organisation";
+  const owner = role === "owner" || role === "admin";
   const vouchers = [...data.vouchers].sort(
     (a, b) => (a[sort] - b[sort]) * direction,
   );
@@ -49,7 +48,7 @@ export function Vouchers() {
   }
   return (
     <Box style={{ gap: 0 }}>
-      {(owner || org) && (
+      {owner && (
         <Section>
           <Btn
             outline
@@ -60,98 +59,101 @@ export function Vouchers() {
           </Btn>
         </Section>
       )}
-      {org && !data.organisations.length && (
-        <Empty>
-          Your cafe will invite this email to an organisation. Sign in again
-          after the invitation arrives.
-        </Empty>
-      )}
       <Line />
-      <Row style={{ paddingHorizontal: 16, minHeight: 56, gap: 6 }}>
-        <Copy style={{ width: owner ? 22 : 72, fontSize: 14 }}>
-          {owner ? "#" : "Voucher"}
-        </Copy>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Sort vouchers by value"
-          onPress={() => sortBy("balance")}
-          style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
-        >
-          <Row style={{ gap: 2 }}>
-            <Copy style={{ fontSize: 14 }}>Value</Copy>
-            {owner && (
-              <Asset
-                name="16-396-imgArrowDropDown.svg"
-                width={18}
-                height={18}
-              />
-            )}
-          </Row>
-        </Pressable>
-        {owner && <Copy style={{ flex: 1.5, fontSize: 14 }}>Company</Copy>}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Sort vouchers by validity"
-          onPress={() => sortBy("expiresAt")}
-          style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
-        >
-          <Copy style={{ fontSize: 14 }}>Valid ⌄</Copy>
-        </Pressable>
-        <Copy style={{ width: 52, fontSize: 14 }}>
-          {owner ? "Delete" : org ? "Select" : "Share"}
-        </Copy>
-      </Row>
-      <Line />
-      {!vouchers.length && <Empty>No valid vouchers yet.</Empty>}
-      {vouchers.map((v, i) => (
-        <Row
-          key={v.id}
-          style={{ paddingHorizontal: 16, minHeight: 58, gap: 6 }}
-        >
-          <Copy style={{ width: owner ? 22 : 72, fontSize: owner ? 16 : 13 }}>
-            {owner ? i + 1 : v.code}
-          </Copy>
-          <Copy style={{ flex: 1, fontSize: 14 }}>
-            {money(
-              v.balance,
-              data.stores.find((s) => s.id === v.storeId)?.currency,
-            )}
-          </Copy>
-          {owner && (
-            <Copy numberOfLines={2} style={{ flex: 1.5, fontSize: 14 }}>
-              {data.organisations.find((o) => o.id === v.orgId)?.name ??
-                "Organisation"}
+      <ScrollView horizontal contentContainerStyle={{ flexGrow: 1 }}>
+        <Box style={{ flex: 1, gap: 0, minWidth: owner ? 400 : 320 }}>
+          <Row style={{ paddingHorizontal: 16, minHeight: 56, gap: 6 }}>
+            <Copy style={{ width: owner ? 22 : 72, fontSize: 14 }}>
+              {owner ? "#" : "Voucher"}
             </Copy>
-          )}
-          <Copy style={{ flex: 1, fontSize: 14 }}>{validity(v.expiresAt)}</Copy>
-          <View style={{ width: 52 }}>
-            {owner || org ? (
-              <Check
-                hideLabel
-                label={`Select voucher ${v.code}`}
-                checked={selected.includes(v.id)}
-                disabled={!!v.reservedBy || (org && !!v.email)}
-                onPress={() => toggle(v.id)}
-              />
-            ) : (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Share voucher ${v.code}`}
-                disabled={!!v.reservedBy}
-                onPress={() => {
-                  setShare(v);
-                  setAddress("");
-                }}
-                style={{ minHeight: 44, justifyContent: "center" }}
+            {owner && <Copy style={{ width: 72, fontSize: 14 }}>Voucher</Copy>}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sort vouchers by value"
+              onPress={() => sortBy("balance")}
+              style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
+            >
+              <Row style={{ gap: 2 }}>
+                <Copy style={{ fontSize: 14 }}>Value</Copy>
+                {owner && (
+                  <Asset
+                    name="16-396-imgArrowDropDown.svg"
+                    width={18}
+                    height={18}
+                  />
+                )}
+              </Row>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sort vouchers by validity"
+              onPress={() => sortBy("expiresAt")}
+              style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
+            >
+              <Copy style={{ fontSize: 14 }}>Valid ⌄</Copy>
+            </Pressable>
+            <Copy style={{ width: 52, fontSize: 14 }}>
+              {owner ? "Delete" : "Share"}
+            </Copy>
+          </Row>
+          <Line />
+          {!vouchers.length && <Empty>No valid vouchers yet.</Empty>}
+          {vouchers.map((v, i) => (
+            <Row
+              key={v.id}
+              style={{ paddingHorizontal: 16, minHeight: 58, gap: 6 }}
+            >
+              <Copy
+                style={{ width: owner ? 22 : 72, fontSize: owner ? 16 : 13 }}
               >
-                <Copy style={{ fontSize: 13, textDecorationLine: "underline" }}>
-                  Share
+                {owner ? i + 1 : v.code}
+              </Copy>
+              {owner && (
+                <Copy selectable style={{ width: 72, fontSize: 13 }}>
+                  {v.code}
                 </Copy>
-              </Pressable>
-            )}
-          </View>
-        </Row>
-      ))}
+              )}
+              <Copy style={{ flex: 1, fontSize: 14 }}>
+                {money(
+                  v.balance,
+                  data.stores.find((s) => s.id === v.storeId)?.currency,
+                )}
+              </Copy>
+              <Copy style={{ flex: 1, fontSize: 14 }}>
+                {validity(v.expiresAt)}
+              </Copy>
+              <View style={{ width: 52 }}>
+                {owner ? (
+                  <Check
+                    hideLabel
+                    label={`Select voucher ${v.code}`}
+                    checked={selected.includes(v.id)}
+                    disabled={!!v.reservedBy}
+                    onPress={() => toggle(v.id)}
+                  />
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Share voucher ${v.code}`}
+                    disabled={!!v.reservedBy}
+                    onPress={() => {
+                      setShare(v);
+                      setAddress("");
+                    }}
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                  >
+                    <Copy
+                      style={{ fontSize: 13, textDecorationLine: "underline" }}
+                    >
+                      Share
+                    </Copy>
+                  </Pressable>
+                )}
+              </View>
+            </Row>
+          ))}
+        </Box>
+      </ScrollView>
       <Section
         style={{
           alignItems: "center",
@@ -163,11 +165,6 @@ export function Vouchers() {
         }}
       >
         <Copy>Total vouchers: {vouchers.length}</Copy>
-        {org && (
-          <Small>
-            {vouchers.filter((v) => !v.email).length} available to allocate
-          </Small>
-        )}
       </Section>
       {owner && (
         <Section>
@@ -192,34 +189,6 @@ export function Vouchers() {
               </Btn>
             )}
           </Row>
-        </Section>
-      )}
-      {org && selected.length > 0 && (
-        <Section>
-          <Select
-            label="Allocate to recipient"
-            value={recipient}
-            onChange={setRecipient}
-            options={data.recipients.map((r) => ({
-              value: r.email,
-              label: r.email,
-            }))}
-          />
-          <Btn
-            disabled={!recipient}
-            onPress={() =>
-              void run(async () => {
-                await api("/vouchers/allocate", {
-                  ids: selected,
-                  email: recipient,
-                });
-                setSelected([]);
-                await refresh();
-              }, "Vouchers allocated. The recipient will receive an email.")
-            }
-          >
-            Allocate {selected.length} vouchers
-          </Btn>
         </Section>
       )}
       <Dialog
@@ -261,8 +230,8 @@ export function Vouchers() {
           placeholder="you@example.com"
         />
         <Small>
-          Note: You can share your voucher to same organisation as you and
-          voucher will be removed from your account
+          Sharing transfers this voucher to the email address entered and
+          removes it from your account.
         </Small>
         <Btn
           onPress={() =>
@@ -287,30 +256,32 @@ export function GenerateVouchers() {
     [amount, setAmount] = useState("10"),
     [month, setMonth] = useState(String(new Date().getMonth() + 1)),
     [year, setYear] = useState(String(new Date().getFullYear() + 1)),
-    [existing, setExisting] = useState(false),
-    [orgId, setOrgId] = useState(data.organisations[0]?.id ?? ""),
-    [orgName, setOrgName] = useState(""),
-    [orgEmail, setOrgEmail] = useState(""),
-    [payment, setPayment] = useState<"card" | "cash">("card"),
+    [payment, setPayment] = useState<"card" | "cash" | "voucher">("card"),
     [cashReceived, setCashReceived] = useState(false);
   const key = useRef(requestKey());
   const total = Number(quantity) * Math.round(Number(amount) * 100);
   const [adminStore, setAdminStore] = useState(data.stores[0]?.id ?? "");
+  const [verifiedVoucher, setVerifiedVoucher] =
+    useState<VerifiedVoucher | null>(null);
   const store = data.stores.find(
     (s) =>
-      s.id ===
-      (data.user?.role === "admin"
-        ? adminStore
-        : data.user?.role === "organisation"
-          ? data.organisations[0]?.storeId
-          : data.user?.storeId),
+      s.id === (data.user?.role === "admin" ? adminStore : data.user?.storeId),
   );
-  const organisation = data.organisations.find(
-    (o) => o.id === orgId && o.storeId === store?.id,
-  );
-  function choosePayment(next: "card" | "cash") {
+  const voucherBalance =
+    verifiedVoucher &&
+    verifiedVoucher.storeId === store?.id &&
+    verifiedVoucher.expiresAt > Date.now()
+      ? verifiedVoucher.balance
+      : 0;
+  const selectedPayment =
+    payment === "voucher" && voucherBalance <= 0 ? "card" : payment;
+  const voucherAmount =
+    selectedPayment === "voucher" ? Math.min(total, voucherBalance) : 0;
+  const remaining = total - voucherAmount;
+  function choosePayment(next: "card" | "cash" | "voucher") {
     if (next !== payment) setCashReceived(false);
     setPayment(next);
+    key.current = requestKey();
   }
   function validate() {
     if (
@@ -346,8 +317,10 @@ export function GenerateVouchers() {
           amount: Math.round(Number(amount) * 100),
           month: Number(month),
           year: Number(year),
-          ...(owner ? (existing ? { orgId } : { orgName, orgEmail }) : {}),
-          payment,
+          payment: selectedPayment,
+          ...(selectedPayment === "voucher"
+            ? { voucherCode: verifiedVoucher?.code }
+            : {}),
           cashReceived,
         },
         { "Idempotency-Key": key.current },
@@ -421,95 +394,13 @@ export function GenerateVouchers() {
               onPress={() =>
                 void run(async () => {
                   validate();
-                  if (!owner && !data.organisations.length)
-                    throw new Error(
-                      "Your cafe must invite your organisation before purchasing vouchers.",
-                    );
-                  setStep(owner ? 1 : 2);
+                  setStep(1);
                 })
               }
             >
-              {owner ? "Submit" : "Next"}
+              Review order
             </Btn>
           </Box>
-        </>
-      ) : step === 1 ? (
-        <>
-          <Box
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Organisation account"
-            style={{
-              borderWidth: 1,
-              borderColor: "#b3b3b3",
-              borderRadius: 10,
-              gap: 0,
-              overflow: "hidden",
-            }}
-          >
-            <Choice selected={existing} onPress={() => setExisting(true)}>
-              Existing account
-            </Choice>
-            <Choice selected={!existing} onPress={() => setExisting(false)}>
-              Add new
-            </Choice>
-          </Box>
-          {existing ? (
-            <>
-              <Select
-                label="Select organisation"
-                value={orgId}
-                onChange={setOrgId}
-                options={data.organisations
-                  .filter((o) => o.storeId === store?.id)
-                  .map((o) => ({ value: o.id, label: o.name }))}
-              />
-              <Copy>
-                Email Address:{" "}
-                {organisation
-                  ? organisation.email || "No email provided"
-                  : "No organisations yet"}
-              </Copy>
-            </>
-          ) : (
-            <>
-              <Field
-                label="Company name"
-                value={orgName}
-                onChange={setOrgName}
-              />
-              <Field
-                label="Email Address (optional)"
-                value={orgEmail}
-                onChange={setOrgEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              <Small>Add an email to send an invitation and receipt.</Small>
-            </>
-          )}
-          <Btn
-            style={{ width: 188, alignSelf: "flex-end" }}
-            onPress={() =>
-              void run(async () => {
-                if (existing && !organisation)
-                  throw new Error("Select an existing organisation.");
-                if (!existing && !orgName.trim())
-                  throw new Error("Enter the company name.");
-                if (
-                  !existing &&
-                  orgEmail.trim() &&
-                  !emailValid(orgEmail.trim())
-                )
-                  throw new Error(
-                    "Enter a valid email address or leave it blank.",
-                  );
-                setStep(2);
-              })
-            }
-          >
-            Submit
-          </Btn>
-          <Link onPress={() => setStep(0)}>Back</Link>
         </>
       ) : (
         <>
@@ -537,28 +428,28 @@ export function GenerateVouchers() {
               </Row>
             </Box>
           </Box>
-          <Box style={{ gap: 12 }}>
+          <Box style={{ gap: 8 }}>
             <Small>ACCOUNT</Small>
-            <Box style={{ alignItems: "center", gap: 0 }}>
-              <Copy>
-                {owner
-                  ? existing
-                    ? organisation?.name
-                    : orgName
-                  : data.organisations[0]?.name}
-              </Copy>
-              <Copy style={{ color: "#999" }}>
-                {owner
-                  ? existing
-                    ? organisation?.email || "No email provided"
-                    : orgEmail.trim() || "No email provided"
-                  : data.user?.email}
-              </Copy>
-            </Box>
-            {owner && (
-              <Link onPress={() => setStep(1)}>Modify organisation</Link>
-            )}
+            <Copy>{data.user?.email}</Copy>
+            <Small>
+              New vouchers will be added to your account. Share their codes with
+              customers so they can claim them.
+            </Small>
           </Box>
+          {owner && store && (
+            <VoucherCodeField
+              key={store.id}
+              storeId={store.id}
+              initialVoucher={
+                verifiedVoucher?.storeId === store.id ? verifiedVoucher : null
+              }
+              onVerified={(voucher) => {
+                setVerifiedVoucher(voucher);
+                if (voucher) choosePayment("voucher");
+                key.current = requestKey();
+              }}
+            />
+          )}
           <Box style={{ gap: 10 }}>
             <Small>PAYMENT METHOD</Small>
             <View
@@ -571,34 +462,60 @@ export function GenerateVouchers() {
               }}
             >
               <Choice
-                selected={payment === "card"}
+                selected={selectedPayment === "card"}
                 onPress={() => choosePayment("card")}
               >
                 Card / Apple Pay / Google Pay
               </Choice>
               {owner && (
                 <Choice
-                  selected={payment === "cash"}
+                  selected={selectedPayment === "voucher"}
+                  disabled={voucherBalance <= 0}
+                  onPress={() => choosePayment("voucher")}
+                >
+                  Voucher ({money(voucherBalance, store?.currency)})
+                </Choice>
+              )}
+              {owner && (
+                <Choice
+                  selected={selectedPayment === "cash"}
                   onPress={() => choosePayment("cash")}
                 >
                   Cash in store
                 </Choice>
               )}
             </View>
-            {payment === "cash" ? (
+            {selectedPayment === "cash" ? (
               <Check
                 checked={cashReceived}
                 onPress={() => setCashReceived(!cashReceived)}
                 label="I confirm cash payment has been received"
               />
-            ) : (
+            ) : remaining > 0 ? (
               <Small>
+                {voucherAmount > 0
+                  ? `Your voucher covers ${money(voucherAmount, store?.currency)}. Pay the remaining ${money(remaining, store?.currency)} by card or an eligible wallet. `
+                  : ""}
                 {data.paymentsEnabled
                   ? "Complete payment at secure checkout. Saved cards and eligible wallets will be available."
                   : "Card payments require the payment provider configuration."}
               </Small>
+            ) : (
+              <Small>Your voucher covers the full total.</Small>
             )}
           </Box>
+          {voucherAmount > 0 && (
+            <Box>
+              <Row>
+                <Copy style={{ flex: 1 }}>Voucher credit</Copy>
+                <Copy>−{money(voucherAmount, store?.currency)}</Copy>
+              </Row>
+              <Row>
+                <Copy style={{ flex: 1 }}>Total to pay</Copy>
+                <Copy>{money(remaining, store?.currency)}</Copy>
+              </Row>
+            </Box>
+          )}
           <Box style={{ gap: 8 }}>
             <Small>ADD PAYMENT METHOD</Small>
             <Btn outline onPress={() => nav("Payment method")}>
@@ -608,8 +525,10 @@ export function GenerateVouchers() {
           <Btn
             style={{ width: 173, alignSelf: "flex-end" }}
             disabled={
-              (payment === "cash" && !cashReceived) ||
-              (payment === "card" && !data.paymentsEnabled)
+              (selectedPayment === "cash" && !cashReceived) ||
+              (selectedPayment !== "cash" &&
+                remaining > 0 &&
+                !data.paymentsEnabled)
             }
             onPress={() => void submit()}
           >
@@ -617,129 +536,6 @@ export function GenerateVouchers() {
           </Btn>
         </>
       )}
-    </Section>
-  );
-}
-export function Recipients() {
-  const { data, run, refresh } = useApp();
-  const [query, setQuery] = useState(""),
-    [search, setSearch] = useState(""),
-    [sort, setSort] = useState(1),
-    [selected, setSelected] = useState<string[]>([]),
-    [editor, setEditor] = useState<{ id?: string; email: string } | null>(null),
-    [confirm, setConfirm] = useState(false);
-  const list = data.recipients
-    .filter((r) => r.email.includes(search.toLowerCase()))
-    .sort((a, b) => a.email.localeCompare(b.email) * sort);
-  return (
-    <Section>
-      <Row>
-        <Field
-          style={{ flex: 1 }}
-          placeholder="Search email address"
-          value={query}
-          onChange={setQuery}
-        />
-        <Btn small onPress={() => setSearch(query)}>
-          Search
-        </Btn>
-      </Row>
-      <Btn outline onPress={() => setEditor({ email: "" })}>
-        Add recipient
-      </Btn>
-      <Row>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setSort(-sort)}
-          style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
-        >
-          <Copy>Email addresses {sort === 1 ? "↓" : "↑"}</Copy>
-        </Pressable>
-        <Copy>Delete</Copy>
-      </Row>
-      {!list.length && <Empty>No recipients found.</Empty>}
-      {list.map((r) => (
-        <Row
-          key={r.id}
-          style={{ borderBottomWidth: 1, borderColor: "#d9d9d9" }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Edit ${r.email}`}
-            onPress={() => setEditor(r)}
-            style={{ flex: 1, paddingVertical: 16 }}
-          >
-            <Copy>{r.email}</Copy>
-          </Pressable>
-          <Check
-            hideLabel
-            label={`Select ${r.email}`}
-            checked={selected.includes(r.id)}
-            onPress={() =>
-              setSelected(
-                selected.includes(r.id)
-                  ? selected.filter((x) => x !== r.id)
-                  : [...selected, r.id],
-              )
-            }
-          />
-        </Row>
-      ))}
-      {selected.length > 0 && (
-        <Btn onPress={() => setConfirm(true)}>Submit ({selected.length})</Btn>
-      )}
-      <Dialog
-        visible={!!editor}
-        title={editor?.id ? "Edit recipient" : "Add recipient"}
-        onClose={() => setEditor(null)}
-      >
-        <Field
-          label="Email address"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={editor?.email ?? ""}
-          onChange={(email) => setEditor({ ...editor, email })}
-        />
-        <Btn
-          onPress={() =>
-            void run(async () => {
-              await api("/recipients", editor);
-              setEditor(null);
-              await refresh();
-            }, "Recipient saved.")
-          }
-        >
-          Save
-        </Btn>
-      </Dialog>
-      <Dialog
-        visible={confirm}
-        title="Delete recipients?"
-        onClose={() => setConfirm(false)}
-      >
-        <Copy>
-          Delete {selected.length} recipient(s)? Their allocated vouchers will
-          return to your organisation.
-        </Copy>
-        <Row>
-          <Btn outline style={{ flex: 1 }} onPress={() => setConfirm(false)}>
-            Cancel
-          </Btn>
-          <Btn
-            style={{ flex: 1 }}
-            onPress={() =>
-              void run(async () => {
-                await api("/recipients", { action: "delete", ids: selected });
-                setSelected([]);
-                setConfirm(false);
-                await refresh();
-              }, "The selected recipients have been deleted.")
-            }
-          >
-            Proceed
-          </Btn>
-        </Row>
-      </Dialog>
     </Section>
   );
 }

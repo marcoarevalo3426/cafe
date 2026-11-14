@@ -61,9 +61,7 @@ export class Database implements Storage {
       data JSON NOT NULL,
       user_email VARCHAR(254) GENERATED ALWAYS AS (CASE WHEN kind='users' THEN JSON_UNQUOTE(JSON_EXTRACT(data,'$.email')) ELSE NULL END) STORED,
       voucher_code VARCHAR(6) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (CASE WHEN kind='vouchers' THEN JSON_UNQUOTE(JSON_EXTRACT(data,'$.code')) ELSE NULL END) STORED,
-      recipient_org VARCHAR(128) GENERATED ALWAYS AS (CASE WHEN kind='recipients' THEN JSON_UNQUOTE(JSON_EXTRACT(data,'$.orgId')) ELSE NULL END) STORED,
-      recipient_email VARCHAR(254) GENERATED ALWAYS AS (CASE WHEN kind='recipients' THEN JSON_UNQUOTE(JSON_EXTRACT(data,'$.email')) ELSE NULL END) STORED,
-      PRIMARY KEY(kind,id),UNIQUE KEY cafe_sequence(sequence_id),UNIQUE KEY cafe_user_email(user_email),UNIQUE KEY cafe_voucher_code(voucher_code),UNIQUE KEY cafe_recipient_email(recipient_org,recipient_email)
+      PRIMARY KEY(kind,id),UNIQUE KEY cafe_sequence(sequence_id),UNIQUE KEY cafe_user_email(user_email),UNIQUE KEY cafe_voucher_code(voucher_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     await this.pool.query(
       "CREATE TABLE IF NOT EXISTS cafe_locks (id VARCHAR(40) NOT NULL PRIMARY KEY) ENGINE=InnoDB",

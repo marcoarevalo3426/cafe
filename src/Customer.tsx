@@ -14,7 +14,8 @@ import {
   Select,
 } from "./ui";
 import { useApp } from "./context";
-import { money, type CartLine } from "./types";
+import { money, type CartLine, type VerifiedVoucher } from "./types";
+import { VoucherCodeField } from "./VoucherCodeField";
 import { api, requestKey } from "./api";
 import { externalLink, openLink } from "./platform";
 import {
@@ -268,6 +269,8 @@ export function Cart() {
     [pending, setPending] = useState(""),
     [editIndex, setEditIndex] = useState<number | null>(null);
   const key = useRef(requestKey());
+  const [verifiedVoucher, setVerifiedVoucher] =
+    useState<VerifiedVoucher | null>(null);
   const store = data.stores.find((s) => s.id === storeId);
   let total = 0;
   const rows = cart.map((line, index) => {
@@ -285,6 +288,8 @@ export function Cart() {
     storeId,
     data.user?.email,
     pending,
+    Date.now(),
+    verifiedVoucher,
   );
   const selectedPayment = cartPaymentMethod(balance, storeId, paymentChoice);
   const useVoucher = selectedPayment === "voucher";
@@ -305,6 +310,9 @@ export function Cart() {
           storeId,
           lines: cart,
           useVouchers: useVoucher,
+          ...(useVoucher && verifiedVoucher?.storeId === storeId
+            ? { voucherCode: verifiedVoucher.code }
+            : {}),
           payment: "card",
         },
         { "Idempotency-Key": key.current },
@@ -455,6 +463,19 @@ export function Cart() {
           <Link disabled={!!pending} onPress={() => nav("Cafe menu")}>
             Add more items
           </Link>
+          <VoucherCodeField
+            key={storeId}
+            storeId={storeId}
+            initialVoucher={
+              verifiedVoucher?.storeId === storeId ? verifiedVoucher : null
+            }
+            disabled={!!pending}
+            onVerified={(voucher) => {
+              setVerifiedVoucher(voucher);
+              if (voucher) setPaymentChoice({ storeId, method: "voucher" });
+              key.current = requestKey();
+            }}
+          />
           <Copy style={{ fontWeight: "600" }}>Payment method</Copy>
           <View
             accessibilityRole="radiogroup"
@@ -477,13 +498,27 @@ export function Cart() {
                 : "Card / Apple Pay / Google Pay"}
             </Choice>
           </View>
+          {useVoucher && applied > 0 && (
+            <Small>
+              Voucher credit applied: {money(applied, store?.currency)}. Voucher
+              balance after this order:{" "}
+              {money(balance - applied, store?.currency)}.
+            </Small>
+          )}
+          <Row accessibilityLiveRegion="polite">
+            <Copy style={{ flex: 1, fontWeight: "600" }}>
+              Remaining to pay by card
+            </Copy>
+            <Copy style={{ fontWeight: "600" }}>
+              {money(remaining, store?.currency)}
+            </Copy>
+          </Row>
           {remaining > 0 && (
             <>
               {useVoucher && (
                 <Small>
-                  Your vouchers cover {money(applied, store?.currency)}. Pay the
-                  remaining {money(remaining, store?.currency)} by card or an
-                  eligible wallet at checkout.
+                  Your remaining balance will be paid by Card / Apple Pay /
+                  Google Pay at checkout.
                 </Small>
               )}
               <Link disabled={!!pending} onPress={() => nav("Payment method")}>

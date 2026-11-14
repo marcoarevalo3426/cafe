@@ -20,8 +20,7 @@ import { chooseFile, enablePush, checkUpdate, openLink } from "./platform";
 export function Profile() {
   const { data, run, refresh, notice } = useApp();
   const u = data.user!;
-  const s = data.stores.find((s) => s.id === u.storeId),
-    org = data.organisations.find((o) => o.id === u.orgId);
+  const s = data.stores.find((s) => s.id === u.storeId);
   const [editing, setEditing] = useState(false),
     [name, setName] = useState(u.name),
     [phone, setPhone] = useState(u.phone),
@@ -29,7 +28,6 @@ export function Profile() {
     [address, setAddress] = useState(s?.address ?? ""),
     [currency, setCurrency] = useState(s?.currency ?? "AUD"),
     [logo, setLogo] = useState(s?.logo ?? ""),
-    [orgName, setOrgName] = useState(org?.name ?? ""),
     [newEmail, setNewEmail] = useState(""),
     [emailCode, setEmailCode] = useState(""),
     [emailStage, setEmailStage] = useState(false);
@@ -37,11 +35,7 @@ export function Profile() {
     <Section>
       {editing ? (
         <>
-          <Field
-            label={u.role === "organisation" ? "Contact name" : "Name"}
-            value={name}
-            onChange={setName}
-          />
+          <Field label="Name" value={name} onChange={setName} />
           {u.role === "owner" && (
             <>
               <Field
@@ -91,9 +85,6 @@ export function Profile() {
               {logo && <Link onPress={() => setLogo("")}>Remove logo</Link>}
             </>
           )}
-          {u.role === "organisation" && (
-            <Field label="Company name" value={orgName} onChange={setOrgName} />
-          )}
           <Field
             label="Contact number"
             value={phone}
@@ -110,7 +101,6 @@ export function Profile() {
                   address,
                   currency,
                   logo,
-                  orgName,
                 });
                 await refresh();
                 setEditing(false);
@@ -143,12 +133,7 @@ export function Profile() {
               )}
             </>
           )}
-          {org && (
-            <Box>
-              <Copy style={{ fontWeight: "700" }}>Company name:</Copy>
-              <Copy>{org.name}</Copy>
-            </Box>
-          )}
+
           <Box>
             <Copy style={{ fontWeight: "700" }}>
               {u.role === "owner" ? "Shop owner name:" : "Contact name:"}

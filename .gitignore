@@ -22,3 +22,6 @@ build/
 hosting/
 
 .aws-deployment.json
+.aws-data-*.json
+# Local browser proof can contain redeemable voucher codes.
+docs/*.jpg

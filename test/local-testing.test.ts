@@ -6,6 +6,7 @@ import { Database } from "./support/database";
 import { Domain } from "../server/domain";
 import { createApp } from "../server/app";
 import { isLocalTestingRequest } from "../server/local-testing";
+import { testingAccountChoices } from "../src/account-choices";
 
 const request = (
   peer: string,
@@ -71,7 +72,7 @@ test("testing mode creates fixed demo sessions without email and cannot grant Ad
       (await (await fetch(`${base}/bootstrap`)).json()).testingModeAvailable,
       true,
     );
-    for (const role of ["owner", "customer", "organisation"]) {
+    for (const role of ["owner", "customer"]) {
       const response = await fetch(`${base}/auth/testing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -128,6 +129,75 @@ test("testing mode creates fixed demo sessions without email and cannot grant Ad
   }
 });
 
+test("local Testing mode skips codes for designated emails, opens account choices and keeps test sessions local", async () => {
+  const db = new Database();
+  const d = new Domain(db, true);
+  await d.seed();
+  const server = createApp(d).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.on("listening", resolve));
+  const base = `http://127.0.0.1:${(server.address() as any).port}/api`;
+  const post = (
+    path: string,
+    body: unknown,
+    token = "",
+    extra: Record<string, string> = {},
+  ) =>
+    fetch(base + path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Cafe-Client": "native",
+        Authorization: `Bearer ${token}`,
+        ...extra,
+      },
+      body: JSON.stringify(body),
+    });
+  try {
+    for (const email of [
+      "marco.arevalo3426@gmail.com",
+      " MAREVALO@NEPGROUP.COM ",
+    ]) {
+      const response = await post("/auth/testing", { email });
+      assert.equal(response.status, 200);
+      const { token, user } = await response.json();
+      assert.match(token, /^testing_/);
+      assert.equal(user.email, email.trim().toLowerCase());
+      assert.equal(user.role, undefined);
+      const data = await (
+        await fetch(`${base}/bootstrap`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).json();
+      assert.deepEqual(data.accountRoles, ["owner", "customer", "admin"]);
+      assert.ok(
+        testingAccountChoices(data).some((choice) => choice.role === "admin"),
+      );
+      const admin = await post("/auth/role", { role: "admin" }, token);
+      assert.equal(admin.status, 200);
+      assert.equal((await admin.json()).email, email.trim().toLowerCase());
+      d.demo = false;
+      assert.equal(await d.authenticate(token), null);
+      assert.equal((await post("/auth/testing", { email })).status, 404);
+      d.demo = true;
+    }
+    assert.equal((await db.list("otp")).length, 0);
+    assert.equal((await db.list("jobs")).length, 0);
+    assert.equal(
+      (await post("/auth/testing", { email: "other@example.com" })).status,
+      403,
+    );
+    const normalSignIn = await post("/auth/request", {
+      email: "marevalo@nepgroup.com",
+    });
+    assert.match((await normalSignIn.json()).developmentCode, /^\d{6}$/);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((e) => (e ? reject(e) : resolve())),
+    );
+    await db.close();
+  }
+});
+
 for (const config of [
   { demo: true, production: true },
   { demo: false, production: false },
@@ -171,7 +241,8 @@ test("public requests cannot expose Testing mode or reuse a local test session",
   const db = new Database(":memory:");
   const d = new Domain(db, true);
   await d.seed();
-  const session = await d.testingLogin("owner");
+  const session = await d.localTestingSignIn("marevalo@nepgroup.com");
+  await d.chooseAccount(session.user, "admin", session.token);
   const server = createApp(d).listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.on("listening", resolve));
   const base = `http://127.0.0.1:${(server.address() as any).port}/api`;
@@ -205,6 +276,10 @@ test("public requests cannot expose Testing mode or reuse a local test session",
     assert.equal(bootstrap.data.testingModeAvailable, false);
     assert.equal(bootstrap.data.user, null);
     assert.equal((await send("/auth/testing", { role: "admin" })).status, 404);
+    assert.equal(
+      (await send("/auth/testing", { email: "marevalo@nepgroup.com" })).status,
+      404,
+    );
     assert.equal(
       (await send("/admin", { action: "settings", price: 1 })).status,
       401,

@@ -1,6 +1,7 @@
 import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import type { Domain } from "./domain";
+import { migrateAccounts } from "./migrate-accounts";
 
 const ssm = new SSMClient({});
 const lambda = new LambdaClient({});
@@ -47,6 +48,7 @@ async function initialize() {
   ]);
   const domain = new Domain(new DynamoDatabase(), false);
   await domain.db.initialize();
+  await migrateAccounts(domain.db);
   const app = createApp(domain, {
     production: true,
     origin: process.env.APP_ORIGIN,

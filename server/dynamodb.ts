@@ -109,9 +109,7 @@ export class DynamoDatabase implements Storage {
         ? String(r.email).toLowerCase()
         : kind === "vouchers"
           ? r.code
-          : kind === "recipients"
-            ? JSON.stringify([r.orgId, String(r.email).toLowerCase()])
-            : undefined;
+          : undefined;
     const key = unique(row);
     if (
       key !== undefined &&

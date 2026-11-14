@@ -1,11 +1,10 @@
-export type Role = "owner" | "customer" | "organisation" | "admin";
+export type Role = "owner" | "customer" | "admin";
 export interface User {
   id: string;
   email: string;
   role?: Role;
   name: string;
   phone: string;
-  orgId?: string;
   storeId?: string;
   orderNotifications: boolean;
   announcements: boolean;
@@ -65,29 +64,20 @@ export interface Order {
   completedAt?: number;
   payment: string;
 }
-export interface Organisation {
-  id: string;
-  storeId: string;
-  name: string;
-  email: string;
-  contact: string;
-}
-export interface Recipient {
-  id: string;
-  orgId: string;
-  email: string;
-}
 export interface Voucher {
   id: string;
   code: string;
   storeId: string;
-  orgId: string;
   balance: number;
   initialAmount: number;
   expiresAt: number;
   email?: string;
   reservedBy?: string;
 }
+export type VerifiedVoucher = Pick<
+  Voucher,
+  "id" | "code" | "storeId" | "balance" | "expiresAt"
+> & { currency: string };
 export interface Feedback {
   id: string;
   userId: string;
@@ -104,8 +94,6 @@ export interface Bootstrap {
   menu: MenuItem[];
   orders: Order[];
   vouchers: Voucher[];
-  organisations: Organisation[];
-  recipients: Recipient[];
   templates: MenuItem[];
   demo: boolean;
   testingModeAvailable?: boolean;

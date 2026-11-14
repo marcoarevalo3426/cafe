@@ -8,6 +8,7 @@ import {
 import type { Storage, Otp, Session } from "./storage";
 import { verificationEmail } from "./verification-email";
 import { testEmailSignInEnabled } from "./test-email-sign-in";
+import { adminEmails } from "../src/allowed-accounts";
 import {
   emailValid,
   type User,
@@ -16,11 +17,10 @@ import {
   type Order,
   type CartLine,
   type Voucher,
-  type Organisation,
-  type Recipient,
   type Role,
   type Feedback,
   type Bootstrap,
+  type VerifiedVoucher,
 } from "../src/types";
 export class AppError extends Error {
   constructor(
@@ -59,10 +59,7 @@ export const integer = (n: unknown, min: number, max: number) => {
   );
   return n;
 };
-export const admins = new Set([
-  "marco.arevalo3426@gmail.com",
-  "marevalo@nepgroup.com",
-]);
+export const admins = new Set<string>(adminEmails);
 export interface Job {
   id: string;
   type: "email" | "push";
@@ -193,7 +190,21 @@ export class Domain {
     );
     return this.signIn(address, true);
   }
-  private async signIn(address: string, testEmailSignIn = false) {
+  async localTestingSignIn(raw: unknown) {
+    assert(this.demo, "Testing mode is unavailable.", 404);
+    const address = email(raw);
+    assert(
+      admins.has(address),
+      "Choose a demo account or sign in with a designated test email.",
+      403,
+    );
+    return this.signIn(address, false, true);
+  }
+  private async signIn(
+    address: string,
+    testEmailSignIn = false,
+    localTesting = false,
+  ) {
     return await this.db.atomic(async () => {
       let user = (await this.db.list<User>("users")).find(
         (x) => x.email === address,
@@ -208,7 +219,7 @@ export class Domain {
           announcements: true,
           ...(admins.has(address) ? { role: "admin" as Role } : {}),
         });
-      return await this.createSession(user, false, testEmailSignIn);
+      return await this.createSession(user, localTesting, testEmailSignIn);
     });
   }
   private async consumeCode(address: string, code: unknown) {
@@ -242,7 +253,7 @@ export class Domain {
   ) {
     assert(!user.disabled, "This account has been disabled.", 403);
     const token = (testing ? "testing_" : "") + randomBytes(32).toString("hex");
-    const chooseAccount = admins.has(user.email) && !testing;
+    const chooseAccount = admins.has(user.email);
     await this.db.put("sessions", {
       id: digest(token),
       userId: user.id,
@@ -255,8 +266,7 @@ export class Domain {
   async testingLogin(role: unknown) {
     assert(this.demo, "Testing mode is unavailable.", 404);
     assert(
-      typeof role === "string" &&
-        ["customer", "owner", "organisation"].includes(role),
+      typeof role === "string" && ["customer", "owner"].includes(role),
       "Choose a test account.",
     );
     return await this.db.atomic(async () => {
@@ -269,7 +279,6 @@ export class Domain {
       const accounts: Record<string, string> = {
         owner: "demo-owner",
         customer: "demo-customer-user",
-        organisation: "demo-organisation-user",
       };
       let user = await this.db.get<User>("users", accounts[role]);
       assert(user?.role === role, "Demo account unavailable.", 404);
@@ -311,7 +320,7 @@ export class Domain {
           admins.has(pending.email),
         "Administrators must use an allowed email address.",
       );
-      for (const kind of ["recipients", "vouchers", "organisations"])
+      for (const kind of ["vouchers"])
         for (const r of (await this.db.list<any>(kind)).filter(
           (r) => r.email === user.email,
         )) {
@@ -365,10 +374,7 @@ export class Domain {
   async setRole(user: User, raw: unknown) {
     user = (await this.db.get<User>("users", user.id)) ?? user;
     assert(!user.role, "Your account role is already set.", 409);
-    assert(
-      ["owner", "customer", "organisation"].includes(String(raw)),
-      "Select a valid role.",
-    );
+    assert(["owner", "customer"].includes(String(raw)), "Select a valid role.");
     user.role = raw as Role;
     if (raw === "owner") {
       const store: Store = {
@@ -384,12 +390,6 @@ export class Domain {
       };
       await this.db.put("stores", store);
       user.storeId = store.id;
-    }
-    if (raw === "organisation") {
-      const org = (await this.db.list<Organisation>("organisations")).find(
-        (x) => x.email === user.email,
-      );
-      if (org) user.orgId = org.id;
     }
     return await this.db.put("users", user);
   }
@@ -464,19 +464,6 @@ export class Domain {
       404,
     );
     return store;
-  }
-  async org(user: User) {
-    this.require(user, ["organisation"]);
-    const org = await this.db.get<Organisation>(
-      "organisations",
-      user.orgId ?? "",
-    );
-    assert(
-      org && org.email === user.email,
-      "Your organisation has not been invited by a cafe yet.",
-      403,
-    );
-    return org;
   }
   async cleanup(now = Date.now()) {
     await this.db.atomic(async () => {
@@ -599,12 +586,54 @@ export class Domain {
     assert(matches.length, "Menu item not found.", 404);
     for (const x of matches) await this.db.delete("menu", x.id);
   }
+  private async voucherByCode(raw: unknown, storeId: string) {
+    const code = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    assert(/^[a-z0-9]{6}$/.test(code), "Invalid voucher.");
+    const voucher = (await this.db.list<Voucher>("vouchers")).find(
+      (v) => v.code === code,
+    );
+    assert(
+      voucher &&
+        voucher.storeId === storeId &&
+        voucher.balance > 0 &&
+        voucher.expiresAt > Date.now() &&
+        !voucher.reservedBy,
+      "Invalid voucher.",
+    );
+    return voucher;
+  }
+  async verifyVoucher(
+    user: User,
+    raw: unknown,
+    storeId: string,
+  ): Promise<VerifiedVoucher> {
+    return this.db.atomic(async () => {
+      const account = await this.db.get<User>("users", user.id);
+      assert(
+        account && !account.disabled,
+        "Please sign in to verify a voucher.",
+        401,
+      );
+      // Claiming a bearer code depends on the code and signed-in identity,
+      // rather than the account's current Customer/Owner/Admin selection.
+      const store = await this.db.get<Store>("stores", storeId);
+      assert(store, "Invalid voucher.");
+      const voucher = await this.voucherByCode(raw, store.id);
+      if (voucher.email !== account.email)
+        await this.db.put("vouchers", { ...voucher, email: account.email });
+      return {
+        id: voucher.id,
+        code: voucher.code,
+        storeId: store.id,
+        balance: voucher.balance,
+        expiresAt: voucher.expiresAt,
+        currency: store.currency,
+      };
+    });
+  }
   async generateDraft(user: User, body: any) {
-    this.require(user, ["owner", "organisation", "admin"]);
-    const org = user.role === "organisation" ? await this.org(user) : undefined;
-    const store = org
-      ? (await this.db.get<Store>("stores", org.storeId))!
-      : await this.ownedStore(user, body.storeId);
+    this.require(user, ["owner", "admin"]);
+    const store = await this.ownedStore(user, body.storeId);
     const quantity = integer(body.quantity, 1, 100),
       amount = integer(body.amount, 1000, 1000000),
       month = integer(body.month, 1, 12),
@@ -615,47 +644,25 @@ export class Domain {
       );
     const expiresAt = Date.UTC(year, month, 1);
     assert(expiresAt > Date.now(), "Voucher validity must be in the future.");
-    let organisation = org;
-    if (!org && body.orgId) {
-      organisation = await this.db.get("organisations", body.orgId);
-      assert(
-        organisation?.storeId === store.id,
-        "Organisation not found.",
-        404,
-      );
+    const payload = { quantity, amount, expiresAt, assignedEmail: user.email };
+    const total = quantity * amount;
+    if (body.useVouchers === true) {
+      this.require(user, ["owner", "admin"]);
+      const voucher = await this.voucherByCode(body.voucherCode, store.id);
+      const voucherAmount = Math.min(total, voucher.balance);
+      return {
+        store,
+        payload: {
+          ...payload,
+          total,
+          voucherAmount,
+          allocations: [{ id: voucher.id, amount: voucherAmount }],
+          voucherExpiresAt: voucher.expiresAt,
+        },
+        total: total - voucherAmount,
+      };
     }
-    const payload = {
-      quantity,
-      amount,
-      expiresAt,
-      orgId: organisation?.id,
-      orgName: organisation?.name ?? text(body.orgName, 120),
-      orgEmail:
-        organisation?.email ??
-        (body.orgEmail === undefined ||
-        body.orgEmail === null ||
-        (typeof body.orgEmail === "string" && !body.orgEmail.trim())
-          ? ""
-          : email(body.orgEmail)),
-    };
-    if (!organisation && payload.orgEmail) {
-      const match = (await this.db.list<Organisation>("organisations")).find(
-        (x) => x.email === payload.orgEmail,
-      );
-      assert(
-        !match || match.storeId === store.id,
-        "This organisation already belongs to another cafe.",
-      );
-      if (match) payload.orgId = match.id;
-      const account = (await this.db.list<User>("users")).find(
-        (x) => x.email === payload.orgEmail,
-      );
-      assert(
-        !account?.role || account.role === "organisation",
-        "Use an organisation account email.",
-      );
-    }
-    return { store, payload, total: quantity * amount };
+    return { store, payload, total };
   }
   async newCheckout(
     user: User,
@@ -664,7 +671,19 @@ export class Domain {
     payload: any,
     amount: number,
     key: string,
-  ) {
+  ): Promise<Checkout> {
+    return this.db.atomic(() =>
+      this.newCheckoutAtomic(user, type, store, payload, amount, key),
+    );
+  }
+  private async newCheckoutAtomic(
+    user: User,
+    type: Checkout["type"],
+    store: Store,
+    payload: any,
+    amount: number,
+    key: string,
+  ): Promise<Checkout> {
     const existing = (await this.db.list<Checkout>("checkouts")).find(
       (x) => x.userId === user.id && x.key === key,
     );
@@ -672,7 +691,7 @@ export class Domain {
       assert(existing.type === type, "Request key already used.");
       return existing;
     }
-    return await this.db.put("checkouts", {
+    const checkout = await this.db.put("checkouts", {
       id: id(),
       userId: user.id,
       storeId: store.id,
@@ -684,8 +703,25 @@ export class Domain {
       createdAt: Date.now(),
       key,
     } as Checkout);
+    for (const allocation of payload.allocations ?? []) {
+      const voucher = await this.db.get<Voucher>("vouchers", allocation.id);
+      assert(
+        voucher &&
+          voucher.storeId === store.id &&
+          !voucher.reservedBy &&
+          voucher.expiresAt > Date.now() &&
+          allocation.amount > 0 &&
+          voucher.balance >= allocation.amount,
+        "Invalid voucher.",
+      );
+      await this.db.put("vouchers", { ...voucher, reservedBy: checkout.id });
+    }
+    return checkout;
   }
   async fulfill(checkoutId: string, payment = "card") {
+    return this.db.atomic(() => this.fulfillAtomic(checkoutId, payment));
+  }
+  private async fulfillAtomic(checkoutId: string, payment: string) {
     const c = await this.db.get<Checkout>("checkouts", checkoutId);
     assert(c, "Checkout not found.", 404);
     if (c.status === "fulfilled") return c.result;
@@ -694,47 +730,7 @@ export class Domain {
     assert(user && !user.disabled, "Account unavailable.", 403);
     let result: any;
     if (c.type === "vouchers") {
-      let org = await this.db.get<Organisation>(
-        "organisations",
-        c.payload.orgId ?? "",
-      );
-      if (!org) {
-        org = await this.db.put("organisations", {
-          id: id(),
-          storeId: c.storeId,
-          name: c.payload.orgName,
-          email: c.payload.orgEmail,
-          contact: "",
-        });
-        if (org.email) {
-          const invited = (await this.db.list<User>("users")).find(
-            (x) => x.email === org!.email,
-          );
-          if (invited && (!invited.role || invited.role === "organisation"))
-            await this.db.put("users", {
-              ...invited,
-              role: "organisation",
-              orgId: org.id,
-            });
-          else if (!invited)
-            await this.db.put("users", {
-              id: id(),
-              email: org.email,
-              role: "organisation",
-              orgId: org.id,
-              name: org.contact,
-              phone: "",
-              orderNotifications: true,
-              announcements: true,
-            } as User);
-          await this.queue(
-            "email",
-            org.email,
-            "Your Café organisation invitation",
-            `You have been invited to manage ${org.name}'s vouchers. Sign in using this email at the Café app to accept your invitation.`,
-          );
-        }
-      }
+      const assignedEmail = c.payload.assignedEmail || user.email;
       const vouchers: Voucher[] = [];
       for (let i = 0; i < c.payload.quantity; i++) {
         let code: string;
@@ -751,21 +747,20 @@ export class Domain {
             id: id(),
             code,
             storeId: c.storeId,
-            orgId: org.id,
+            email: assignedEmail,
             balance: c.payload.amount,
             initialAmount: c.payload.amount,
             expiresAt: c.payload.expiresAt,
           } as Voucher),
         );
       }
-      if (org.email)
-        await this.queue(
-          "email",
-          org.email,
-          "Your Café voucher receipt",
-          `Receipt ${c.id}: ${vouchers.length} vouchers. Total ${c.currency.toUpperCase()} ${(c.amount / 100).toFixed(2)}. Payment: ${payment}. Sign in to allocate your vouchers.`,
-        );
-      result = { voucherCount: vouchers.length, organisation: org };
+      await this.queue(
+        "email",
+        assignedEmail,
+        "Your Café voucher receipt",
+        `Receipt ${c.id}: ${vouchers.length} vouchers. Total ${c.currency.toUpperCase()} ${((c.payload.total ?? c.amount) / 100).toFixed(2)}. Voucher credit ${((c.payload.voucherAmount ?? 0) / 100).toFixed(2)}. Payment: ${payment}. Sign in to view your vouchers.`,
+      );
+      result = { voucherCount: vouchers.length, assignedEmail };
     } else {
       const p = c.payload;
       const order: Order = {
@@ -780,17 +775,6 @@ export class Domain {
         createdAt: Date.now(),
         payment,
       };
-      for (const a of p.allocations) {
-        const v = await this.db.get<Voucher>("vouchers", a.id);
-        assert(
-          v && v.reservedBy === c.id && v.balance >= a.amount,
-          "A voucher is no longer available.",
-        );
-        v.balance -= a.amount;
-        delete v.reservedBy;
-        if (v.balance === 0) await this.db.delete("vouchers", v.id);
-        else await this.db.put("vouchers", v);
-      }
       await this.db.put("orders", order);
       const store = (await this.db.get<Store>("stores", c.storeId))!;
       const owner = await this.db.get<User>("users", store.ownerId);
@@ -810,6 +794,21 @@ export class Domain {
       );
       result = order;
     }
+    for (const allocation of c.payload.allocations ?? []) {
+      const voucher = await this.db.get<Voucher>("vouchers", allocation.id);
+      assert(
+        voucher &&
+          voucher.reservedBy === c.id &&
+          voucher.balance >= allocation.amount,
+        "A voucher is no longer available.",
+      );
+      const balance = voucher.balance - allocation.amount;
+      if (balance === 0) await this.db.delete("vouchers", voucher.id);
+      else {
+        delete voucher.reservedBy;
+        await this.db.put("vouchers", { ...voucher, balance });
+      }
+    }
     await this.db.put("checkouts", { ...c, status: "fulfilled", result });
     return result;
   }
@@ -825,7 +824,15 @@ export class Domain {
     await this.db.put("checkouts", { ...c, status: "cancelled" });
   }
   async orderDraft(user: User, body: any, key: string) {
-    this.require(user, ["customer"]);
+    // Any signed-in account can buy from a cafe. Ordering does not grant
+    // owner/admin permissions or depend on the current account selection.
+    const account = await this.db.get<User>("users", user.id);
+    assert(
+      account && !account.disabled,
+      "Please sign in to place an order.",
+      401,
+    );
+    user = account;
     const existing = (await this.db.list<Checkout>("checkouts")).find(
       (c) => c.userId === user.id && c.key === key,
     );
@@ -877,10 +884,17 @@ export class Domain {
           (v) =>
             v.storeId === store.id &&
             v.email === user.email &&
+            v.balance > 0 &&
             !v.reservedBy &&
             v.expiresAt > Date.now(),
         )
         .sort((a, b) => a.expiresAt - b.expiresAt);
+      if (body.voucherCode !== undefined && body.voucherCode !== "") {
+        const supplied = await this.voucherByCode(body.voucherCode, store.id);
+        if (!vouchers.some((v) => v.id === supplied.id))
+          vouchers.push(supplied);
+        vouchers.sort((a, b) => a.expiresAt - b.expiresAt);
+      }
       for (const v of vouchers) {
         if (!remaining) break;
         const amount = Math.min(v.balance, remaining);
@@ -913,10 +927,6 @@ export class Domain {
       remaining,
       key,
     );
-    for (const a of allocations) {
-      const v = (await this.db.get<Voucher>("vouchers", a.id))!;
-      await this.db.put("vouchers", { ...v, reservedBy: c.id });
-    }
     return c;
   }
   async completeOrder(user: User, orderId: string) {
@@ -954,41 +964,8 @@ export class Domain {
     }
     for (const value of ids) await this.db.delete("vouchers", String(value));
   }
-  async allocate(user: User, body: any) {
-    const org = await this.org(user);
-    const recipient = (await this.db.list<Recipient>("recipients")).find(
-      (r) => r.orgId === org.id && r.email === email(body.email),
-    );
-    assert(recipient, "Add this email to your recipients first.");
-    assert(
-      Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= 100,
-      "Select up to 100 vouchers.",
-    );
-    for (const value of body.ids) {
-      const v = await this.db.get<Voucher>("vouchers", value);
-      assert(
-        v &&
-          v.orgId === org.id &&
-          !v.email &&
-          !v.reservedBy &&
-          v.expiresAt > Date.now(),
-        "A selected voucher is unavailable.",
-        409,
-      );
-    }
-    for (const value of body.ids) {
-      const v = (await this.db.get<Voucher>("vouchers", value))!;
-      await this.db.put("vouchers", { ...v, email: recipient.email });
-    }
-    await this.queue(
-      "email",
-      recipient.email,
-      "A little coffee, on us",
-      `${org.name} has shared ${body.ids.length} cafe voucher(s) with you. Sign in with this email to view them.`,
-    );
-  }
   async share(user: User, body: any) {
-    this.require(user, ["customer"]);
+    this.require(user, ["customer", "owner", "admin"]);
     const v = await this.db.get<Voucher>("vouchers", text(body.id));
     assert(
       v && v.email === user.email && !v.reservedBy && v.expiresAt > Date.now(),
@@ -997,12 +974,6 @@ export class Domain {
     );
     const address = email(body.email);
     assert(address !== user.email, "Choose another recipient.");
-    assert(
-      (await this.db.list<Recipient>("recipients")).some(
-        (r) => r.orgId === v.orgId && r.email === address,
-      ),
-      "You can only share with a recipient in the same organisation.",
-    );
     await this.db.put("vouchers", { ...v, email: address });
     await this.queue(
       "email",
@@ -1010,52 +981,6 @@ export class Domain {
       "A voucher has been shared with you",
       `Sign in with this email to use your cafe voucher ${v.code}.`,
     );
-  }
-  async recipients(user: User, body: any) {
-    const org = await this.org(user);
-    if (body.action === "delete") {
-      assert(
-        Array.isArray(body.ids) && body.ids.length <= 1000,
-        "Select recipients.",
-      );
-      for (const rid of body.ids) {
-        const r = await this.db.get<Recipient>("recipients", rid);
-        assert(r?.orgId === org.id, "Recipient not found.", 404);
-        for (const v of (await this.db.list<Voucher>("vouchers")).filter(
-          (v) => v.orgId === org.id && v.email === r.email,
-        )) {
-          assert(!v.reservedBy, "A recipient has a payment in progress.", 409);
-          delete v.email;
-          await this.db.put("vouchers", v);
-        }
-        await this.db.delete("recipients", rid);
-      }
-    } else {
-      const address = email(body.email);
-      let r: Recipient | undefined = body.id
-        ? await this.db.get("recipients", body.id)
-        : undefined;
-      if (body.id) {
-        assert(r?.orgId === org.id, "Recipient not found.", 404);
-        for (const v of (await this.db.list<Voucher>("vouchers")).filter(
-          (v) => v.orgId === org.id && v.email === r!.email,
-        )) {
-          assert(!v.reservedBy, "A recipient has a payment in progress.", 409);
-          await this.db.put("vouchers", { ...v, email: address });
-        }
-      }
-      assert(
-        !(await this.db.list<Recipient>("recipients")).some(
-          (x) => x.orgId === org.id && x.email === address && x.id !== r?.id,
-        ),
-        "Recipient already exists.",
-      );
-      await this.db.put("recipients", {
-        id: r?.id ?? id(),
-        orgId: org.id,
-        email: address,
-      });
-    }
   }
   async saveProfile(user: User, body: any) {
     user.name = text(body.name, 120);
@@ -1093,14 +1018,6 @@ export class Domain {
         logo,
       });
     }
-    if (user.role === "organisation") {
-      const org = await this.org(user);
-      await this.db.put("organisations", {
-        ...org,
-        name: text(body.orgName, 120),
-        contact: user.name,
-      });
-    }
     return await this.db.put("users", {
       ...(await this.db.get<User>("users", user.id))!,
       name: user.name,
@@ -1123,16 +1040,10 @@ export class Domain {
         menu: await this.db.list<MenuItem>("menu"),
         orders: [],
         vouchers: [],
-        organisations: [],
-        recipients: [],
         templates: [],
         demo: this.demo,
       };
     const owner = user.role === "owner";
-    const org =
-      user.role === "organisation"
-        ? await this.db.get<Organisation>("organisations", user.orgId ?? "")
-        : undefined;
     const admin = user.role === "admin";
     return {
       user: { ...user, stripeCustomer: undefined },
@@ -1157,15 +1068,7 @@ export class Domain {
           v.balance > 0 &&
           (admin ||
             (owner && v.storeId === user.storeId) ||
-            (org && v.orgId === org.id) ||
             (user.role === "customer" && v.email === user.email)),
-      ),
-      organisations: (await this.db.list<Organisation>("organisations")).filter(
-        (o) =>
-          admin || (owner && o.storeId === user.storeId) || o.id === org?.id,
-      ),
-      recipients: (await this.db.list<Recipient>("recipients")).filter(
-        (r) => admin || r.orgId === org?.id,
       ),
       templates: (await this.db.list<MenuItem>("templates")).filter(
         (t) => t.storeId === user.storeId,
@@ -1218,39 +1121,20 @@ export class Domain {
       } as Store);
       await this.addTemplate(owner, "Coffee");
       await this.addTemplate(owner, "Food");
-      await this.db.put("organisations", {
-        id: "demo-org",
-        storeId: "demo-cafe",
-        name: "NEP Group",
-        email: "organisation@cafe.test",
-        contact: "John",
+      await this.db.put<User>("users", {
+        id: "demo-customer-user",
+        email: "customer@cafe.test",
+        role: "customer",
+        name: "John Parker",
+        phone: "",
+        orderNotifications: true,
+        announcements: true,
       });
-      for (const [key, address, role] of [
-        ["customer", "customer@cafe.test", "customer"],
-        ["organisation", "organisation@cafe.test", "organisation"],
-      ] as const)
-        await this.db.put("users", {
-          id: `demo-${key}-user`,
-          email: address,
-          role,
-          name: key === "customer" ? "John Parker" : "John",
-          phone: "",
-          ...(role === "organisation" ? { orgId: "demo-org" } : {}),
-          orderNotifications: true,
-          announcements: true,
-        });
-      for (const address of ["customer@cafe.test", "colleague@cafe.test"])
-        await this.db.put("recipients", {
-          id: id(),
-          orgId: "demo-org",
-          email: address,
-        });
       for (let i = 0; i < 4; i++)
         await this.db.put("vouchers", {
           id: id(),
           code: `cafe0${i}`,
           storeId: "demo-cafe",
-          orgId: "demo-org",
           balance: [1500, 500, 200, 180][i],
           initialAmount: 1500,
           expiresAt: Date.UTC(new Date().getUTCFullYear() + 1, 9, 1),

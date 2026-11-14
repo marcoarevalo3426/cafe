@@ -13,7 +13,7 @@ export class SqliteTestDatabase implements Storage {
       .exec(`CREATE TABLE records(kind TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL CHECK(json_valid(data)),PRIMARY KEY(kind,id));
  CREATE UNIQUE INDEX users_email ON records(json_extract(data,'$.email')) WHERE kind='users';
  CREATE UNIQUE INDEX voucher_code ON records(json_extract(data,'$.code')) WHERE kind='vouchers';
- CREATE UNIQUE INDEX recipient_email ON records(json_extract(data,'$.orgId'),json_extract(data,'$.email')) WHERE kind='recipients';`);
+`);
   }
   async initialize() {}
   async list<T>(kind: string): Promise<T[]> {

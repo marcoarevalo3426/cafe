@@ -48,9 +48,10 @@ export async function checkout(
   const expires = Math.min(
     Math.floor(Date.now() / 1000) + 24 * 3600,
     Math.floor(
-      (c.type === "vouchers"
-        ? c.payload.expiresAt
-        : (c.payload.voucherExpiresAt ?? Infinity)) / 1000,
+      Math.min(
+        c.type === "vouchers" ? c.payload.expiresAt : Infinity,
+        c.payload.voucherExpiresAt ?? Infinity,
+      ) / 1000,
     ),
   );
   assert(

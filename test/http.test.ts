@@ -98,6 +98,12 @@ test("the hosted app serves its API under /cafe without taking over the domain r
   try {
     assert.equal((await fetch(`${root}/api/bootstrap`)).status, 404);
     assert.equal((await fetch(`${root}/cafe/health`)).status, 200);
+    for (const method of ["GET", "POST"]) {
+      const missing = await fetch(`${root}/cafe/api/missing`, { method });
+      assert.equal(missing.status, 404);
+      assert.match(missing.headers.get("content-type")!, /application\/json/);
+      assert.deepEqual(await missing.json(), { error: "Not found." });
+    }
     const response = await fetch(`${root}/cafe/api/auth/testing`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -350,7 +350,7 @@ export default function Admin() {
             onChange={(role) =>
               setEditor({ ...editor, role: role as User["role"] })
             }
-            options={["owner", "customer", "organisation"].map((r) => ({
+            options={["owner", "customer"].map((r) => ({
               value: r,
               label: r,
             }))}

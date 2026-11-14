@@ -3,6 +3,7 @@ import { Domain } from "./domain";
 import { createApp } from "./app";
 import { processJobs, reconcilePayments } from "./integrations";
 import { emailConfiguration } from "./email";
+import { migrateAccounts } from "./migrate-accounts";
 
 async function main() {
   const production = process.env.NODE_ENV === "production";
@@ -17,6 +18,7 @@ async function main() {
     );
   const db = new Database();
   await db.initialize();
+  await migrateAccounts(db);
   const domain = new Domain(db, process.env.DEV_DEMO === "1");
   await domain.seed();
   await domain.cleanup();

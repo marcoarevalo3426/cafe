@@ -1,4 +1,5 @@
 import { apiBase, loadToken, saveToken, nativeHeaders } from "./platform";
+import { readApiResponse } from "./api-response";
 let token: string | null = null;
 export async function initializeSession() {
   token = await loadToken();
@@ -23,10 +24,7 @@ export async function api<T = any>(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  const result = await r.json();
-  if (!r.ok)
-    throw new Error(result.error ?? "Something went wrong. Please try again.");
-  return result;
+  return readApiResponse<T>(r);
 }
 export const requestKey = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;

@@ -9,9 +9,8 @@ async function setup() {
   const d = new Domain(db, true);
   await d.seed();
   const owner = (await db.get<User>("users", "demo-owner"))!,
-    customer = (await db.get<User>("users", "demo-customer-user"))!,
-    org = (await db.get<User>("users", "demo-organisation-user"))!;
-  return { db, d, owner, customer, org };
+    customer = (await db.get<User>("users", "demo-customer-user"))!;
+  return { db, d, owner, customer };
 }
 async function draft(d: Domain, customer: User, key = "order-1", quantity = 1) {
   const item = (await d.db.list<MenuItem>("menu"))[0];
@@ -122,7 +121,6 @@ test("voucher generation enforces boundaries and generates 100 unique six-charac
     amount: 1000,
     month: 12,
     year: new Date().getUTCFullYear() + 1,
-    orgId: "demo-org",
   };
   await assert.rejects(
     async () => await d.generateDraft(owner, { ...b, quantity: 101 }),
@@ -203,52 +201,33 @@ test("pending checkout reserves vouchers, prevents sharing, and cancellation rel
   );
   await db.close();
 });
-test("cross-organisation sharing is rejected and same-organisation sharing transfers ownership", async () => {
+test("sharing transfers an owned voucher to any valid email and rejects self-sharing", async () => {
   const { d, db, customer } = await setup();
-  const v = (await db.list<Voucher>("vouchers")).find(
-    (v) => v.email === customer.email,
-  )!;
-  await assert.rejects(
-    async () =>
-      await db.atomic(
-        async () =>
-          await d.share(customer, { id: v.id, email: "outsider@example.com" }),
-      ),
-    /same organisation/,
-  );
-  await db.atomic(
-    async () =>
-      await d.share(customer, { id: v.id, email: "colleague@cafe.test" }),
-  );
-  assert.equal(
-    (await db.get<Voucher>("vouchers", v.id))!.email,
-    "colleague@cafe.test",
-  );
-  assert.ok(!(await d.bootstrap(customer)).vouchers.some((x) => x.id === v.id));
-  await db.close();
-});
-test("allocation cannot overwrite an allocated voucher, and recipient removal unlinks it", async () => {
-  const { d, db, org } = await setup();
-  const v = (await db.list<Voucher>("vouchers")).find((v) => !v.email)!;
-  await db.atomic(
-    async () =>
-      await d.allocate(org, { ids: [v.id], email: "colleague@cafe.test" }),
-  );
-  await assert.rejects(
-    async () =>
-      await db.atomic(
-        async () =>
-          await d.allocate(org, { ids: [v.id], email: "customer@cafe.test" }),
-      ),
-  );
-  const r = (await db.list<any>("recipients")).find(
-    (r) => r.email === "colleague@cafe.test",
-  );
-  await db.atomic(
-    async () => await d.recipients(org, { action: "delete", ids: [r.id] }),
-  );
-  assert.equal((await db.get<Voucher>("vouchers", v.id))!.email, undefined);
-  await db.close();
+  try {
+    const voucher = (await db.list<Voucher>("vouchers")).find(
+      (v) => v.email === customer.email,
+    )!;
+    await assert.rejects(
+      d.share(customer, { id: voucher.id, email: customer.email }),
+      /another recipient/,
+    );
+    await db.atomic(() =>
+      d.share(customer, { id: voucher.id, email: "outsider@example.com" }),
+    );
+    assert.equal(
+      (await db.get<Voucher>("vouchers", voucher.id))!.email,
+      "outsider@example.com",
+    );
+    assert.ok(
+      !(await d.bootstrap(customer)).vouchers.some((v) => v.id === voucher.id),
+    );
+    await assert.rejects(
+      d.share(customer, { id: voucher.id, email: "other@example.com" }),
+      /unavailable/,
+    );
+  } finally {
+    await db.close();
+  }
 });
 test("prices and totals are calculated from the owner menu rather than customer input", async () => {
   const { d, db, customer } = await setup();
