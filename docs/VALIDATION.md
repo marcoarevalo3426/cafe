@@ -53,3 +53,10 @@ See [AWS test deployment](AWS-TEST.md) for the usage-based cost example, resourc
 - The active table is now **nep-cafe-test-data**. Migration briefly paused the test API/worker, copied all three stored items, verified byte-for-byte fingerprints, switched both Lambda environments, and restored previous concurrency and schedule settings. The original table remains an inactive rollback copy. Runtime permissions now reference only the active table.
 
 - Final Amplify publication job 5 reached `SUCCEED`; the stack reached `UPDATE_COMPLETE`. Public verification, secure cookie forwarding, Customer selection, settings and logout passed on the renamed table using a synthetic account, which was removed afterward. The ordinary account received no Admin choices and a forged admin request was rejected. SMTP authentication passed from the deployed worker without sending email.
+
+
+## SMTP endpoint update — 14 November 2026
+
+- Updated the encrypted live SMTP configuration and private deployment settings to the supplied AWS Mail Manager endpoint on port 587 with required STARTTLS and sender `marevalo@nepgroup.com`.
+- Authentication succeeded locally and from the refreshed AWS worker. Certificate validation stayed enabled. The live SecureString was compared against the supplied settings without logging credentials. No test email was sent.
+- Updated `.env.example` with the endpoint, port and sender; username/password remain blank. Credentials are excluded from Git and frontend assets.
