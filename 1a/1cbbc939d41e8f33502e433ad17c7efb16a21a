@@ -1,0 +1,28 @@
+test/cart-payment.test.ts
+  s_28d8a426d303da::t_b0ad545ea2c248 1-36
+  s_28d8a426d303da::t_81654ec153cd58 37-69
+src/cart-payment.ts
+  s_28d8a426d303da::t_b0ad545ea2c248 1-25
+  s_28d8a426d303da::t_6c7056e35911b3 26-34
+src/Customer.tsx
+  s_28d8a426d303da::t_b0ad545ea2c248 20-25,265-267,283-290,293-294
+  s_28d8a426d303da::t_6321923e5dbb97 295-297,308,459-461,463-479,482-491
+src/ui.tsx
+  s_28d8a426d303da::t_b0ad545ea2c248 264,269,274,276-277,281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a1cbbc939d41e8f33502e433ad17c7efb16a21a",
+  "prompts": {},
+  "sessions": {
+    "s_28d8a426d303da": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d1a9-c5bf-71c2-96ca-d3b28f3787d2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "marcoarevalo <marco.arevalo3426@gmail.com>"
+    }
+  }
+}
