@@ -78,3 +78,87 @@ test("API Gateway events preserve JSON bodies, base64 bodies and session cookies
     await db.close();
   }
 });
+
+test("API account selection trusts the verified session and restricts Admin to the two allowed emails", async () => {
+  const db = new Database();
+  const domain = new Domain(db, true);
+  const http = serverlessExpress({
+    app: createApp(domain, { origin: "https://cafe.example.com" }),
+  });
+  let cookies: string[] = [];
+  const request = async (path: string, body?: unknown) => {
+    const response = (await http(
+      {
+        version: "2.0",
+        routeKey: "$default",
+        rawPath: "/api" + path,
+        rawQueryString: "",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://cafe.example.com",
+        },
+        requestContext: {
+          http: {
+            method: body === undefined ? "GET" : "POST",
+            sourceIp: "127.0.0.1",
+          },
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        isBase64Encoded: false,
+        cookies,
+      } as any,
+      {} as any,
+    )) as any;
+    if (response.cookies)
+      cookies = response.cookies.map((cookie: string) => cookie.split(";")[0]);
+    return { status: response.statusCode, body: JSON.parse(response.body) };
+  };
+  try {
+    for (const email of [
+      "marco.arevalo3426@gmail.com",
+      "marevalo@nepgroup.com",
+      "ordinary@example.com",
+    ]) {
+      cookies = [];
+      const code = await domain.requestCode(email);
+      const login = await request("/auth/verify", {
+        email,
+        code: code.developmentCode,
+      });
+      assert.equal(login.status, 200);
+      assert.equal(login.body.user.role, undefined);
+      const bootstrap = await request("/bootstrap");
+      const allowed = email !== "ordinary@example.com";
+      assert.deepEqual(
+        bootstrap.body.accountRoles,
+        allowed ? ["owner", "customer", "admin"] : [],
+      );
+      assert.equal(
+        (await request("/admin", { action: "settings", price: 2900 })).status,
+        403,
+      );
+      const selection = await request("/auth/role", {
+        role: "admin",
+        email: "marco.arevalo3426@gmail.com",
+      });
+      assert.equal(selection.status, allowed ? 200 : 400);
+      if (allowed) {
+        assert.equal(
+          (await request("/admin", { action: "settings", price: 2900 })).status,
+          200,
+        );
+        assert.equal(
+          (await request("/auth/role", { role: "customer" })).status,
+          200,
+        );
+        assert.equal(
+          (await request("/admin", { action: "settings", price: 1 })).status,
+          403,
+        );
+        assert.equal((await request("/bootstrap")).body.users, undefined);
+      }
+    }
+  } finally {
+    await db.close();
+  }
+});

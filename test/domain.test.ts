@@ -86,9 +86,12 @@ test("OTP attempt limit and expiry prevent brute-force login", async () => {
 test("admin role can only originate from verified allowed emails", async () => {
   const { d, db } = await setup();
   const r = await d.requestCode("marco.arevalo3426@gmail.com");
-  const admin = (
-    await d.verify("marco.arevalo3426@gmail.com", r.developmentCode)
-  ).user;
+  const verified = await d.verify(
+    "marco.arevalo3426@gmail.com",
+    r.developmentCode,
+  );
+  assert.equal(verified.user.role, undefined);
+  const admin = await d.chooseAccount(verified.user, "admin", verified.token);
   assert.equal(admin.role, "admin");
   const normal = await d.requestCode("someone@example.com");
   const user = (await d.verify("someone@example.com", normal.developmentCode))

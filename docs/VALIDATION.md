@@ -41,3 +41,15 @@ Browser verification confirmed the Testing mode button on signup, direct demo Ad
 - CloudFormation schema validation passed with cfn-lint and AWS service validation. cfn-guard compliance rules were unavailable; they were not evaluated.
 
 See [AWS test deployment](AWS-TEST.md) for the usage-based cost example, resource layout, test-database limits, redeployment, and complete cleanup of retained storage.
+
+
+## Account choice, database prefix and verification email — 14 November 2026
+
+- Both allowlisted emails now receive Cafe Owner, Customer and Admin choices after successful email verification. Session-scoped selection persists across refreshes; new logins and legacy sessions require a choice. Switch account is available only for those authenticated emails. Owner selection reuses the same cafe and preserves its menu.
+- Customer/owner selections have no admin API access. Ordinary emails cannot see or select Admin, including by forging a request email, changing a role field, or using local Testing mode. The former demo Admin shortcut was removed to enforce the two-email rule in local testing as well.
+- All 37 tests passed against an isolated real DynamoDB table, which was deleted afterward. MySQL 8.4 passed 36 tests; the DynamoDB-specific chunk test was skipped in that mode. TypeScript, production web build and iOS/Android Hermes exports passed.
+- Browser verification used an isolated in-memory local fixture: verified the allowed email, viewed all three choices, selected Cafe Owner, switched to Admin/management, then Customer. No real email or cloud user account was used. Screenshot: [account chooser](account-chooser.png).
+- Verification messages now use the exact subject **Verify your email address**. The HTML email presents the six-digit code prominently, preserves leading zeros, shows the three-minute expiry and includes a plain-text fallback. Tests verify the subject and matching HTML/text code stored in the outbox. Visual preview used the dummy code 012345: [email preview](verification-email.png).
+- The active table is now **nep-cafe-test-data**. Migration briefly paused the test API/worker, copied all three stored items, verified byte-for-byte fingerprints, switched both Lambda environments, and restored previous concurrency and schedule settings. The original table remains an inactive rollback copy. Runtime permissions now reference only the active table.
+
+- Final Amplify publication job 5 reached `SUCCEED`; the stack reached `UPDATE_COMPLETE`. Public verification, secure cookie forwarding, Customer selection, settings and logout passed on the renamed table using a synthetic account, which was removed afterward. The ordinary account received no Admin choices and a forged admin request was rejected. SMTP authentication passed from the deployed worker without sending email.

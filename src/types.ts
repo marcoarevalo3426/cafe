@@ -99,6 +99,7 @@ export interface Feedback {
 }
 export interface Bootstrap {
   user: User | null;
+  accountRoles?: Role[];
   stores: Store[];
   menu: MenuItem[];
   orders: Order[];

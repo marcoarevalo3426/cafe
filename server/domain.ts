@@ -6,6 +6,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import type { Storage, Otp, Session } from "./storage";
+import { verificationEmail } from "./verification-email";
 import {
   emailValid,
   type User,
@@ -18,6 +19,7 @@ import {
   type Recipient,
   type Role,
   type Feedback,
+  type Bootstrap,
 } from "../src/types";
 export class AppError extends Error {
   constructor(
@@ -66,6 +68,7 @@ export interface Job {
   to: string;
   subject: string;
   message: string;
+  html?: string;
   data?: Record<string, string>;
   createdAt: number;
   attempts: number;
@@ -123,6 +126,7 @@ export class Domain {
     subject: string,
     message: string,
     data?: Record<string, string>,
+    html?: string,
   ) {
     return await this.db.put("jobs", {
       id: id(),
@@ -130,6 +134,7 @@ export class Domain {
       to,
       subject,
       message,
+      ...(html ? { html } : {}),
       data,
       createdAt: Date.now(),
       attempts: 0,
@@ -157,11 +162,14 @@ export class Domain {
         attempts: 0,
         created: Date.now(),
       });
+      const verification = verificationEmail(code);
       await this.queue(
         "email",
         address,
-        "Verify your Café email",
-        `Hi there, thank you for signing up. Please verify your details using this code: ${code}. Please note: This code expires in 3 minutes. Kind regards, Admin`,
+        verification.subject,
+        verification.message,
+        undefined,
+        verification.html,
       );
     });
     return {
@@ -216,18 +224,20 @@ export class Domain {
   private async createSession(user: User, testing = false) {
     assert(!user.disabled, "This account has been disabled.", 403);
     const token = (testing ? "testing_" : "") + randomBytes(32).toString("hex");
+    const chooseAccount = admins.has(user.email) && !testing;
     await this.db.put("sessions", {
       id: digest(token),
       userId: user.id,
       expires: Date.now() + 30 * 86400000,
+      ...(chooseAccount ? { activeRole: null } : {}),
     });
-    return { token, user };
+    return { token, user: chooseAccount ? { ...user, role: undefined } : user };
   }
   async testingLogin(role: unknown) {
     assert(this.demo, "Testing mode is unavailable.", 404);
     assert(
       typeof role === "string" &&
-        ["customer", "owner", "organisation", "admin"].includes(role),
+        ["customer", "owner", "organisation"].includes(role),
       "Choose a test account.",
     );
     return await this.db.atomic(async () => {
@@ -241,19 +251,8 @@ export class Domain {
         owner: "demo-owner",
         customer: "demo-customer-user",
         organisation: "demo-organisation-user",
-        admin: "demo-admin-user",
       };
       let user = await this.db.get<User>("users", accounts[role]);
-      if (role === "admin" && !user)
-        user = await this.db.put("users", {
-          id: accounts.admin,
-          email: "admin@cafe.test",
-          role: "admin",
-          name: "Demo administrator",
-          phone: "",
-          orderNotifications: false,
-          announcements: false,
-        } as User);
       assert(user?.role === role, "Demo account unavailable.", 404);
       return await this.createSession(user, true);
     });
@@ -289,7 +288,8 @@ export class Domain {
         409,
       );
       assert(
-        user.role !== "admin" || admins.has(pending.email),
+        (!admins.has(user.email) && user.role !== "admin") ||
+          admins.has(pending.email),
         "Administrators must use an allowed email address.",
       );
       for (const kind of ["recipients", "vouchers", "organisations"])
@@ -304,7 +304,10 @@ export class Domain {
           await this.db.put(kind, { ...r, email: pending.email });
         }
       await this.db.delete("emailChanges", user.id);
-      return await this.db.put("users", { ...user, email: pending.email });
+      return await this.db.put("users", {
+        ...(await this.db.get<User>("users", user.id))!,
+        email: pending.email,
+      });
     });
   }
   async authenticate(token?: string) {
@@ -314,7 +317,19 @@ export class Domain {
       session && session.expires > Date.now()
         ? await this.db.get<User>("users", session.userId)
         : null;
-    return user && !user.disabled ? user : null;
+    if (!user || user.disabled) return null;
+    if (admins.has(user.email)) {
+      const role = session?.activeRole;
+      return {
+        ...user,
+        role:
+          role && ["owner", "customer", "admin"].includes(role)
+            ? role
+            : undefined,
+      };
+    }
+    if (user.role === "admin") return { ...user, role: undefined };
+    return user;
   }
   async logout(user: User) {
     await this.db.atomic(async () => {
@@ -358,9 +373,60 @@ export class Domain {
     }
     return await this.db.put("users", user);
   }
+  async chooseAccount(user: User, raw: unknown, token?: string) {
+    return this.db.atomic(async () => {
+      const stored = await this.db.get<User>("users", user.id);
+      const session = token
+        ? await this.db.get<Session>("sessions", digest(token))
+        : undefined;
+      assert(
+        stored &&
+          !stored.disabled &&
+          session?.userId === stored.id &&
+          session.expires > Date.now(),
+        "Please sign in to continue.",
+        401,
+      );
+      if (!admins.has(stored.email)) return this.setRole(stored, raw);
+      assert(
+        ["owner", "customer", "admin"].includes(String(raw)),
+        "Select a valid account.",
+      );
+      if (raw === "owner") {
+        let store =
+          (await this.db.list<Store>("stores")).find(
+            (store) =>
+              store.ownerId === stored.id && store.id === stored.storeId,
+          ) ??
+          (await this.db.list<Store>("stores")).find(
+            (store) => store.ownerId === stored.id,
+          );
+        if (!store)
+          store = await this.db.put("stores", {
+            id: id(),
+            ownerId: stored.id,
+            name: "My Cafe",
+            address: "",
+            phone: "",
+            currency: "AUD",
+            logo: "",
+            tier: "free",
+            subscription: "Free",
+          } as Store);
+        if (stored.storeId !== store.id) {
+          stored.storeId = store.id;
+          await this.db.put("users", stored);
+        }
+      }
+      await this.db.put("sessions", { ...session, activeRole: raw as Role });
+      return { ...stored, role: raw as Role };
+    });
+  }
   require(user: User, roles: Role[]) {
     assert(
-      user.role && roles.includes(user.role),
+      user.role &&
+        roles.includes(user.role) &&
+        (user.role !== "admin" || admins.has(user.email)),
       "You do not have access to this action.",
       403,
     );
@@ -1005,9 +1071,15 @@ export class Domain {
         contact: user.name,
       });
     }
-    return await this.db.put("users", user);
+    return await this.db.put("users", {
+      ...(await this.db.get<User>("users", user.id))!,
+      name: user.name,
+      phone: user.phone,
+    });
   }
-  async bootstrap(user: User | null) {
+  async bootstrap(
+    user: User | null,
+  ): Promise<Omit<Bootstrap, "paymentsEnabled" | "cards">> {
     const allStores = await this.db.list<Store>("stores");
     const stores = allStores.map(({ ownerId, ...s }) => ({
       ...s,
@@ -1016,6 +1088,7 @@ export class Domain {
     if (!user)
       return {
         user: null,
+        accountRoles: [],
         stores,
         menu: await this.db.list<MenuItem>("menu"),
         orders: [],
@@ -1033,6 +1106,9 @@ export class Domain {
     const admin = user.role === "admin";
     return {
       user: { ...user, stripeCustomer: undefined },
+      accountRoles: admins.has(user.email)
+        ? ["owner", "customer", "admin"]
+        : [],
       stores,
       menu: (await this.db.list<MenuItem>("menu")).filter(
         (m) => !owner || m.storeId === user.storeId,
@@ -1075,7 +1151,10 @@ export class Domain {
             logs: (await this.db.list<any>("logs"))
               .sort((a, b) => b.createdAt - a.createdAt)
               .slice(0, 100),
-            settings: (await this.db.get("settings", "global")) ?? {
+            settings: (await this.db.get<{ subscriptionPrice: number }>(
+              "settings",
+              "global",
+            )) ?? {
               subscriptionPrice: 2900,
             },
             builds: await this.db.list("builds"),

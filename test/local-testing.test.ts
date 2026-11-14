@@ -59,7 +59,7 @@ test("local testing rejects public hosts, remote peers, and forged forwarded hea
   );
 });
 
-test("testing mode creates sessions for fixed demo accounts including admin without sending email", async () => {
+test("testing mode creates fixed demo sessions without email and cannot grant Admin", async () => {
   const db = new Database(":memory:");
   const d = new Domain(db, true);
   await d.seed();
@@ -71,7 +71,7 @@ test("testing mode creates sessions for fixed demo accounts including admin with
       (await (await fetch(`${base}/bootstrap`)).json()).testingModeAvailable,
       true,
     );
-    for (const role of ["owner", "customer", "organisation", "admin"]) {
+    for (const role of ["owner", "customer", "organisation"]) {
       const response = await fetch(`${base}/auth/testing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -90,19 +90,13 @@ test("testing mode creates sessions for fixed demo accounts including admin with
         })
       ).json();
       assert.equal(bootstrap.user.id, user.id);
-      if (role === "admin") {
-        assert.equal(user.email, "admin@cafe.test");
-        const adminResponse = await fetch(`${base}/admin`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Cookie: cookie.split(";")[0],
-          },
-          body: JSON.stringify({ action: "settings", price: 2900 }),
-        });
-        assert.equal(adminResponse.status, 200);
-      }
     }
+    const forbiddenAdmin = await fetch(`${base}/auth/testing`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "admin" }),
+    });
+    assert.equal(forbiddenAdmin.status, 400);
     const native = await fetch(`${base}/auth/testing`, {
       method: "POST",
       headers: {
@@ -177,7 +171,7 @@ test("public requests cannot expose Testing mode or reuse a local test session",
   const db = new Database(":memory:");
   const d = new Domain(db, true);
   await d.seed();
-  const session = await d.testingLogin("admin");
+  const session = await d.testingLogin("owner");
   const server = createApp(d).listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.on("listening", resolve));
   const base = `http://127.0.0.1:${(server.address() as any).port}/api`;

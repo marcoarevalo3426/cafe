@@ -5,8 +5,9 @@ import { api, setSession } from "./api";
 import { emailValid, type Role } from "./types";
 import { useApp } from "./context";
 import TestingMode from "./TestingMode";
+import { accountChoices } from "./account-choices";
 export default function Auth() {
-  const { data, refresh, nav, run } = useApp();
+  const { data, refresh, nav, run, setStoreId, logout } = useApp();
   const [stage, setStage] = useState<"email" | "verify" | "role">(
     data.user ? "role" : "email",
   );
@@ -72,14 +73,17 @@ export default function Auth() {
   }
   async function role(role: Role) {
     await run(async () => {
-      await api("/auth/role", { role });
+      const user = await api("/auth/role", { role });
       await refresh();
+      setStoreId(user.storeId ?? "");
       nav(
-        role === "owner"
-          ? "Orders"
-          : role === "organisation"
-            ? "Vouchers"
-            : "My Cafe",
+        role === "admin"
+          ? "Management"
+          : role === "owner"
+            ? "Orders"
+            : role === "organisation"
+              ? "Vouchers"
+              : "My Cafe",
       );
     });
   }
@@ -186,10 +190,15 @@ export default function Auth() {
           </>
         ) : (
           <>
-            <Copy>Sign up as</Copy>
-            <Btn onPress={() => void role("owner")}>Cafe owner</Btn>
-            <Btn onPress={() => void role("customer")}>Customer</Btn>
-            <Btn onPress={() => void role("organisation")}>Organisation</Btn>
+            <Copy>
+              {data.accountRoles?.length ? "Choose account" : "Sign up as"}
+            </Copy>
+            {accountChoices(data).map((account) => (
+              <Btn key={account.role} onPress={() => void role(account.role)}>
+                {account.label}
+              </Btn>
+            ))}
+            {data.user && <Link onPress={() => void run(logout)}>Log out</Link>}
           </>
         )}
       </Card>

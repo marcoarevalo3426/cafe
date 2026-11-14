@@ -4,7 +4,7 @@ React Native + TypeScript application for cafe ordering, corporate vouchers, and
 
 Online test: [Open Cafe](https://test.d2kzvdmp17kwpy.amplifyapp.com).
 
-The AWS test uses Amplify Hosting, a Lambda API, and DynamoDB. SMTP configuration is stored in AWS Systems Manager Parameter Store as a SecureString. Stripe payments, mobile signing, OTA delivery, and push delivery require their service credentials. See [AWS test deployment](docs/AWS-TEST.md) for deployment, costs, and cleanup.
+The AWS test uses Amplify Hosting, a Lambda API, and DynamoDB. SMTP configuration is stored in AWS Systems Manager Parameter Store as a SecureString. The active DynamoDB table is `nep-cafe-test-data`; the original table is retained as an inactive rollback copy. Stripe payments, mobile signing, OTA delivery, and push delivery require their service credentials. See [AWS test deployment](docs/AWS-TEST.md) for deployment, costs, and cleanup.
 
 ## Run locally
 
@@ -20,16 +20,18 @@ npm run dev
 
 Open <http://localhost:8080>. The API listens on port 4000.
 
-For quick local testing, click **Testing mode** in the signup form and choose Customer, Cafe owner, Organisation, or Admin. The same button appears on the admin management page to switch test accounts. This skips email verification for fixed demo accounts only; the local admin uses `admin@cafe.test`. The button and test login require `DEV_DEMO=1`, a non-production API, and a direct loopback connection using localhost, 127.0.0.1, or ::1. Native debug builds can use the shortcut when connected to that loopback API. Test sessions are rejected outside this local environment. The demo flag must be explicit; it is rejected in production. Demo verification codes appear below the six code inputs. Email delivery is simulated in this mode.
+For quick local testing, click **Testing mode** in the signup form and choose Customer, Cafe owner, or Organisation. The same button appears on the admin management page to switch test accounts. This skips email verification for fixed demo accounts only; Admin access requires signing in with one of the two allowed emails; the local demo displays its verification code without sending email. The button and test login require `DEV_DEMO=1`, a non-production API, and a direct loopback connection using localhost, 127.0.0.1, or ::1. Native debug builds can use the shortcut when connected to that loopback API. Test sessions are rejected outside this local environment. The demo flag must be explicit; it is rejected in production. Demo verification codes appear below the six code inputs. Email delivery is simulated in this mode.
 
 | Demo role | Email |
 | --- | --- |
 | Cafe owner | owner@cafe.test |
 | Customer | customer@cafe.test |
 | Organisation | organisation@cafe.test |
-| Administrator | admin@cafe.test |
+| Administrator | Verify marco.arevalo3426@gmail.com or marevalo@nepgroup.com, then choose Admin |
 
 Use any new email to exercise registration and role selection. In production, only the two administrator emails become administrators, and they must receive and verify real email codes. New owners receive their own empty cafe; the Gordon demo data belongs only to the demo owner. Organisation accounts can purchase and allocate vouchers after a cafe invites them.
+
+After `marco.arevalo3426@gmail.com` or `marevalo@nepgroup.com` verifies an email code, the app shows **Choose account** with **Cafe Owner**, **Customer**, and **Admin**. The navigation offers **Switch account** for those authenticated emails. Each session keeps its own active role; owner/customer mode has no admin permissions. Owner mode creates one cafe if needed and preserves it across switches. New sign-ins ask again, and existing sessions from earlier versions show the chooser. Other emails keep the ordinary signup choices and cannot select Admin, including through Testing mode or a forged API request.
 
 Local persistence requires the MySQL settings in `.env`; database connections and transactions use `mysql2`. Unit tests use an isolated SQLite test double by default. The integration modes run the same suite against isolated MySQL databases or a disposable DynamoDB table; they never use application data. Legacy SQLite data can be migrated with `npm run migrate:sqlite -- --source data/cafe.sqlite --dry-run`, then without `--dry-run` into an empty MySQL destination. Demo data requires explicit `--allow-demo`. The source remains read-only.
 
@@ -107,6 +109,8 @@ Copy `.env.example` to `.env` and fill in server settings. `npm run api` / `npm 
 3. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and `checkout.session.expired`.
 4. Configure Stripe payment methods, eligible wallets, merchant branding, and any required domain registration. Test with Stripe test-mode cards before enabling live keys.
 5. Set `APP_ORIGIN` to the exact website origin. Production requires HTTPS and real email configuration. Wallet availability depends on device, browser, customer region, and Stripe settings.
+
+Verification emails use the subject **Verify your email address**, a styled HTML layout with a prominent six-digit code, a three-minute expiry reminder, and a plain-text fallback.
 
 The outbox retries transient delivery failures with backoff and exposes failures in administrator logs. On AWS, a serial worker receives immediate dispatches after successful mutations and a one-minute scheduled retry. Expo push tickets are checked for receipts; unregistered device tokens are removed. Delivery is subject to provider/device behavior, including users disabling OS notifications or force-stopping an Android app.
 

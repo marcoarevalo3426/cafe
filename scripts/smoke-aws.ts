@@ -68,6 +68,22 @@ async function main() {
     const state = await bootstrap.json();
     assert.equal(state.user.email, email);
     assert.equal(state.testingModeAvailable, false);
+    assert.deepEqual(state.accountRoles, []);
+    const forbidden = await fetch(`${deployment.Website}/api/admin`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: deployment.Website,
+        cookie,
+      },
+      body: JSON.stringify({
+        action: "settings",
+        price: 0,
+        email: "marco.arevalo3426@gmail.com",
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+    assert.equal(forbidden.status, 403);
     await post("/settings", {
       orderNotifications: false,
       announcements: false,

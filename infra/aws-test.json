@@ -26,7 +26,7 @@
       "UpdateReplacePolicy": "Retain",
       "Metadata": {
         "com.aws.cloudformation.Context": {
-          "why": "Test persistence without an idle database instance; snapshot chunks preserve existing domain transactions",
+          "why": "Original database retained as an inactive rollback copy after verified migration; runtime uses TestData",
           "must": [
             "Keep revision conditions and pk/sk schema; retained on stack deletion"
           ]
@@ -193,7 +193,7 @@
                   ],
                   "Resource": {
                     "Fn::GetAtt": [
-                      "Data",
+                      "TestData",
                       "Arn"
                     ]
                   }
@@ -282,7 +282,7 @@
             "NODE_ENV": "production",
             "DEV_DEMO": "0",
             "DYNAMODB_TABLE": {
-              "Ref": "Data"
+              "Ref": "TestData"
             },
             "CONFIG_PARAMETER": {
               "Ref": "ConfigurationParameter"
@@ -351,7 +351,7 @@
             "NODE_ENV": "production",
             "DEV_DEMO": "0",
             "DYNAMODB_TABLE": {
-              "Ref": "Data"
+              "Ref": "TestData"
             },
             "CONFIG_PARAMETER": {
               "Ref": "ConfigurationParameter"
@@ -489,6 +489,58 @@
           ]
         }
       }
+    },
+    "TestData": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Named low-cost live test database; existing data migrated and verified before runtime cutover",
+          "must": [
+            "Keep revision conditions and pk/sk schema; retained on stack deletion"
+          ]
+        }
+      },
+      "Properties": {
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "sk",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "pk",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "sk",
+            "KeyType": "RANGE"
+          }
+        ],
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "OnDemandThroughput": {
+          "MaxReadRequestUnits": 1000,
+          "MaxWriteRequestUnits": 1000
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "cafe-test"
+          }
+        ],
+        "TableName": {
+          "Fn::Sub": "nep-${AWS::StackName}-data"
+        }
+      }
     }
   },
   "Outputs": {
@@ -519,13 +571,19 @@
     "Table": {
       "Description": "DynamoDB test database",
       "Value": {
-        "Ref": "Data"
+        "Ref": "TestData"
       }
     },
     "Worker": {
       "Description": "Outbox worker function",
       "Value": {
         "Ref": "WorkerFunction"
+      }
+    },
+    "LegacyTable": {
+      "Description": "Inactive source table retained for migration rollback",
+      "Value": {
+        "Ref": "Data"
       }
     }
   }

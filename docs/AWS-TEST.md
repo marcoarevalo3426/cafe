@@ -4,13 +4,13 @@ Website: https://test.d2kzvdmp17kwpy.amplifyapp.com
 
 Amplify app name: `nep-cafe-voucher-test`.
 
-Account: `375033595717` (NEP). Region: `ap-southeast-2` (Sydney). Stack: `cafe-test`; private artifact stack: `cafe-test-artifacts`.
+Account: `375033595717` (NEP). Region: `ap-southeast-2` (Sydney). Stack: `cafe-test`; private artifact stack: `cafe-test-artifacts`. Active DynamoDB table: `nep-cafe-test-data`.
 
 ## Design and cost
 
 Amplify serves the static React Native Web build over HTTPS. Its `/api/*` and `/health` rules proxy to an API Gateway HTTP API and an on-demand, ARM Lambda running Express. Requests use the same-origin HttpOnly cookie. The database is DynamoDB Standard, on demand, encrypted at rest. No RDS instance, VPC, NAT gateway, load balancer, provisioned Lambda concurrency, or Amplify WAF subscription is created. Website builds run locally and are uploaded through Amplify's signed deployment URL.
 
-DynamoDB suits the app's existing ID-based record collections and small test workload. RDS MySQL remains an alternative when relational querying or a larger dataset becomes necessary; the MySQL adapter is retained. The AWS test does not connect to the previous shared-hosting database and does not import local demo users or vouchers.
+DynamoDB suits the app's existing ID-based record collections and small test workload. RDS MySQL remains an alternative when relational querying or a larger dataset becomes necessary; the MySQL adapter is retained. The AWS test does not connect to the previous shared-hosting database and does not import local demo users or vouchers. The initial AWS table was migrated to `nep-cafe-test-data`: the API/worker were paused, all three stored items were copied and verified byte-for-byte, both runtime configurations switched, and concurrency/scheduling restored. The original `cafe-test-Data-JW0WI6V05QUL` is retained as an inactive rollback copy; runtime IAM access is scoped to the new table. Both tables remain managed by the same stack and retained on deletion.
 
 Plan around **US$1–5/month for light testing**, depending on actual usage; this is an estimate, not a spending cap. Free-tier eligibility and credits are not assumed. Current AWS Price List rates retrieved on 14 November 2026 produce a US$0.4669/month core-service subtotal for this illustrative workload:
 
@@ -27,9 +27,9 @@ API Gateway throttles to 5 requests/second with a burst of 10. API reserved conc
 
 ## Sign in and test
 
-Use your real email address in the signup form and enter the emailed six-digit code. The online application has `DEV_DEMO=0`; Testing mode and code previews are available only on the local development server. New owners start with an empty cafe and can add menu templates. Administrators are assigned only after verifying an allowlisted administrator email. Card payments remain unavailable until Stripe test credentials and a webhook are configured.
+Use your real email address in the signup form and enter the emailed six-digit code. The online application has `DEV_DEMO=0`; Testing mode and code previews are available only on the local development server. New owners start with an empty cafe and can add menu templates. The two allowlisted emails see Cafe Owner, Customer and Admin choices after verification, plus Switch account in navigation. The active role is scoped to each session. Selecting Customer or Cafe Owner removes admin permissions from that session. Other emails never receive the Admin option and cannot request it through the API or local Testing mode. Card payments remain unavailable until Stripe test credentials and a webhook are configured.
 
-The worker receives immediate dispatches after successful mutations and polls once per minute for retries. SMTP credentials are stored in the standard SecureString parameter `/cafe-test/config`; they are not in Amplify environment settings, frontend assets, Git, or this document. SMTP uses certificate-verified TLS and IPv4. SMTP authentication was verified from Lambda without sending an email. Public session smoke tests used synthetic OTP/account records and removed them afterward.
+The worker receives immediate dispatches after successful mutations and polls once per minute for retries. SMTP credentials are stored in the standard SecureString parameter `/cafe-test/config`; they are not in Amplify environment settings, frontend assets, Git, or this document. Verification messages use the subject **Verify your email address**, styled HTML with a prominent six-digit code, and a plain-text fallback. SMTP uses certificate-verified TLS and IPv4. SMTP authentication was verified from Lambda without sending an email. Public session smoke tests used synthetic OTP/account records and removed them afterward.
 
 ## Redeploy
 
@@ -75,7 +75,7 @@ This creates a uniquely named disposable table and deletes that table in a `fina
 
 To reduce idle work while keeping the app/data, disable the `cafe-test` stack's EventBridge worker schedule. Sign-in email and notifications will stop until it is enabled again. Amplify and database storage remain billable.
 
-For full removal, delete only `cafe-test` and `cafe-test-artifacts` after reviewing the data you want to keep. CloudFormation deliberately **retains** the DynamoDB table and S3 artifact bucket. Export any wanted data, then explicitly delete those retained resources, all object versions in the artifact bucket, and `/cafe-test/config`. Retained data continues to incur storage costs. Do not delete unrelated NEP resources. No teardown was performed during deployment.
+For full removal, delete only `cafe-test` and `cafe-test-artifacts` after reviewing the data you want to keep. CloudFormation deliberately **retains** both the active and inactive rollback DynamoDB tables and the S3 artifact bucket. Export any wanted data, then explicitly delete those retained resources, all object versions in the artifact bucket, and `/cafe-test/config`. Retained data continues to incur storage costs. Do not delete unrelated NEP resources. No teardown was performed during deployment.
 
 ## Validation scope
 

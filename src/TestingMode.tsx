@@ -61,7 +61,6 @@ export default function TestingMode() {
             { role: "customer", label: "Customer" },
             { role: "owner", label: "Cafe owner" },
             { role: "organisation", label: "Organisation" },
-            { role: "admin", label: "Admin" },
           ] as const
         ).map((account) => (
           <Btn key={account.role} onPress={() => void login(account.role)}>

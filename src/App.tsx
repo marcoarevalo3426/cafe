@@ -109,8 +109,21 @@ export default function App() {
     const user = current.current.user;
     const publicPages = ["Sign up", "My Cafe", "Cafe menu", "Menu item"];
     if (!user && !publicPages.includes(next)) next = "Sign up";
+    if (next === "Choose account") {
+      if (!current.current.accountRoles?.length) return;
+      stack.current = [];
+      setCart([]);
+      setSelectedItem(null);
+      setLastOrder(null);
+    }
     setPage((previous) => {
-      if (previous !== next) stack.current.push(previous);
+      if (
+        previous === "Choose account" ||
+        previous === "Sign up" ||
+        next === "Choose account"
+      )
+        stack.current = [];
+      else if (previous !== next) stack.current.push(previous);
       return next;
     });
     setDrawer(false);
@@ -287,7 +300,10 @@ export default function App() {
         : page === "Send feedback" || page === "Submit feedback"
           ? "Send your feedback"
           : page;
-  const isAuth = page === "Sign up" || (!!data.user && !data.user.role);
+  const isAuth =
+    page === "Sign up" ||
+    page === "Choose account" ||
+    (!!data.user && !data.user.role);
   function navigation() {
     return (
       <View
@@ -330,6 +346,17 @@ export default function App() {
             <Copy style={{ color: "#f5f5f5", textAlign: "right" }}>{item}</Copy>
           </Pressable>
         ))}
+        {!!data.user && !!data.accountRoles?.length && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => nav("Choose account")}
+            style={{ padding: 12, minHeight: 44 }}
+          >
+            <Copy style={{ color: "#f5f5f5", textAlign: "right" }}>
+              Switch account
+            </Copy>
+          </Pressable>
+        )}
         <Pressable
           accessibilityRole="button"
           onPress={() => (data.user ? void run(logout) : nav("Sign up"))}

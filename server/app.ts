@@ -153,6 +153,7 @@ export function createApp(
       .find((s) => s.startsWith("cafe_session="))
       ?.slice(13);
     const sessionToken = bearer ?? cookie;
+    res.locals.sessionToken = sessionToken;
     res.locals.user =
       sessionToken?.startsWith("testing_") && !testingAvailable(req)
         ? null
@@ -212,7 +213,12 @@ export function createApp(
   app.post("/api/auth/role", auth, async (req, res) => {
     res.json(
       await d.db.atomic(
-        async () => await d.setRole(res.locals.user, req.body.role),
+        async () =>
+          await d.chooseAccount(
+            res.locals.user,
+            req.body.role,
+            res.locals.sessionToken,
+          ),
       ),
     );
   });
@@ -280,7 +286,7 @@ export function createApp(
     );
     res.json(
       await d.db.put("users", {
-        ...u,
+        ...(await d.db.get<User>("users", u.id))!,
         orderNotifications: req.body.orderNotifications,
         announcements: req.body.announcements,
       }),
@@ -495,7 +501,7 @@ export function createApp(
             await d.setRole(u, b.role ?? "customer");
           } else {
             assert(
-              u.role !== "admin" || !b.disabled,
+              (u.role !== "admin" && !admins.has(u.email)) || !b.disabled,
               "Cannot disable an administrator.",
             );
             if (b.role && u.role !== b.role) {
@@ -520,7 +526,7 @@ export function createApp(
         case "delete-user": {
           const target = await d.db.get<User>("users", text(b.id));
           assert(
-            target && target.role !== "admin",
+            target && target.role !== "admin" && !admins.has(target.email),
             "Account cannot be deleted.",
           );
           const storeIds = (await d.db.list<Store>("stores"))

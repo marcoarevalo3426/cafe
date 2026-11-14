@@ -68,6 +68,7 @@ export async function sendEmail(job: {
   to: string;
   subject: string;
   message: string;
+  html?: string;
 }) {
   const config = emailConfiguration();
   if (!config) throw new Error("Email delivery is not configured.");
@@ -79,6 +80,7 @@ export async function sendEmail(job: {
       to: job.to,
       subject: job.subject,
       text: job.message,
+      ...(job.html ? { html: job.html } : {}),
       messageId: `<${job.id}@${config.from.split("@").pop()}>`,
     });
     return;
@@ -95,6 +97,7 @@ export async function sendEmail(job: {
       to: job.to,
       subject: job.subject,
       text: job.message,
+      ...(job.html ? { html: job.html } : {}),
     }),
     signal: AbortSignal.timeout(15000),
   });

@@ -1,3 +1,4 @@
+import type { Role } from "../src/types";
 export interface Storage {
   initialize(): Promise<void>;
   list<T>(kind: string): Promise<T[]>;
@@ -19,4 +20,5 @@ export interface Session {
   id: string;
   userId: string;
   expires: number;
+  activeRole?: Role | null;
 }

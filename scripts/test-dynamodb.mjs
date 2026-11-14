@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 const region = process.env.AWS_REGION ?? "ap-southeast-2";
-const table = `cafe-test-storage-${randomUUID()}`;
+const table = `nep-cafe-test-storage-${randomUUID()}`;
 const aws = (...args) =>
   execFileSync("aws", [...args, "--region", region, "--output", "json"], {
     encoding: "utf8",
