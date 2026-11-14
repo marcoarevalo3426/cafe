@@ -1,0 +1,21 @@
+docs/AWS-TEST.md
+  s_28d8a426d303da::t_ddc82f361793c8 5-6
+infra/aws-test.json
+  s_28d8a426d303da::t_df98ced5f1a5ed 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43401d7d40b9488927038543c323d676d8981eda",
+  "prompts": {},
+  "sessions": {
+    "s_28d8a426d303da": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d1a9-c5bf-71c2-96ca-d3b28f3787d2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "marcoarevalo <marco.arevalo3426@gmail.com>"
+    }
+  }
+}
