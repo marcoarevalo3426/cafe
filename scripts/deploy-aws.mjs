@@ -109,6 +109,7 @@ deploy(stack, "infra/aws-test.json", [
   `ArtifactBucket=${bucket}`,
   `ArtifactKey=${key}`,
   `ConfigurationParameter=${parameter}`,
+  `TestEmailSignIn=${process.env.TEST_EMAIL_SIGN_IN ?? env.TEST_EMAIL_SIGN_IN ?? "disabled"}`,
 ]);
 const result = {
   account,

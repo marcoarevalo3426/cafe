@@ -21,4 +21,5 @@ export interface Session {
   userId: string;
   expires: number;
   activeRole?: Role | null;
+  testEmailSignIn?: boolean;
 }

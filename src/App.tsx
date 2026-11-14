@@ -41,6 +41,7 @@ import { Vouchers, GenerateVouchers, Recipients } from "./Vouchers";
 import { MyCafe, CafeMenu, MenuItemScreen, Cart, Success } from "./Customer";
 import { Profile, Settings, PaymentMethods, Feedback } from "./Account";
 import Admin from "./Admin";
+import { APP_NAME } from "./brand";
 const initial: Bootstrap = {
   user: null,
   stores: [],
@@ -466,7 +467,7 @@ export default function App() {
             }}
           >
             <ActivityIndicator color="#2c2c2c" size="large" />
-            <Copy>Loading Café…</Copy>
+            <Copy>Loading {APP_NAME}…</Copy>
           </View>
         ) : fatal ? (
           <Section
@@ -657,7 +658,11 @@ export default function App() {
             </Animated.View>
           </View>
         </Modal>
-        <Dialog visible={!!message} title="Café" onClose={() => setMessage("")}>
+        <Dialog
+          visible={!!message}
+          title={APP_NAME}
+          onClose={() => setMessage("")}
+        >
           <Copy>{message}</Copy>
           <Btn onPress={() => setMessage("")}>OK</Btn>
         </Dialog>

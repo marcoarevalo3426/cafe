@@ -1,5 +1,7 @@
 # AWS test deployment
 
+Product name: **NEP Cafe Vouchers**.
+
 Website: https://test.d2kzvdmp17kwpy.amplifyapp.com
 
 Amplify app name: `nep-cafe-voucher-test`.
@@ -27,9 +29,13 @@ API Gateway throttles to 5 requests/second with a burst of 10. API reserved conc
 
 ## Sign in and test
 
-Use your real email address in the signup form and enter the emailed six-digit code. The online application has `DEV_DEMO=0`; Testing mode and code previews are available only on the local development server. New owners start with an empty cafe and can add menu templates. The two allowlisted emails see Cafe Owner, Customer and Admin choices after verification, plus Switch account in navigation. The active role is scoped to each session. Selecting Customer or Cafe Owner removes admin permissions from that session. Other emails never receive the Admin option and cannot request it through the API or local Testing mode. Card payments remain unavailable until Stripe test credentials and a webhook are configured.
+During the requested test phase, entering `marco.arevalo3426@gmail.com` or `marevalo@nepgroup.com` in the signup form opens **Choose account** without sending a code. All other emails still use the emailed six-digit code. This makes the two test accounts accessible to anyone who enters those addresses on the public test site; use only test data while enabled. The online application has `DEV_DEMO=0`; Testing mode and code previews are available only on the local development server. New owners start with an empty cafe and can add menu templates. The two allowlisted emails see Cafe Owner, Customer and Admin choices after sign-in, plus Switch account in navigation. The active role is scoped to each session. Selecting Customer or Cafe Owner removes admin permissions from that session. Other emails never receive the Admin option and cannot request it through the API or local Testing mode. Card payments remain unavailable until Stripe test credentials and a webhook are configured. Voucher generation now defaults to Card / Apple Pay / Google Pay, with one selectable payment option. Owner/admin organisation email is optional; leaving it blank skips organisation account creation and invitation/receipt email while preserving voucher generation. Supplied emails are still validated. Cash requires explicit receipt confirmation.
 
 The worker receives immediate dispatches after successful mutations and polls once per minute for retries. SMTP credentials are stored in the standard SecureString parameter `/cafe-test/config`; they are not in Amplify environment settings, frontend assets, Git, or this document. Verification messages use the subject **Verify your email address**, styled HTML with a prominent six-digit code, and a plain-text fallback. SMTP uses the authenticated AWS Mail Manager endpoint `az4s4n95v4x4.jd2m.mail-manager-smtp.amazonaws.com` on port 587, with required STARTTLS, certificate verification, IPv4, and sender `marevalo@nepgroup.com`. SMTP authentication was verified from Lambda without sending an email. Public session smoke tests used synthetic OTP/account records and removed them afterward.
+
+## Restore email verification
+
+The CloudFormation parameter `TestEmailSignIn` defaults to `disabled`. The current private `.env.hosting` explicitly sets `TEST_EMAIL_SIGN_IN=allowlisted`; Lambda additionally requires `APP_STAGE=test`. No request body or client flag can enable this feature. Set `TEST_EMAIL_SIGN_IN=disabled` in that private file and run `npm run deploy:aws` to restore normal verification. Sessions created by the bypass are rejected as soon as the setting is disabled. OTP-verified sessions are unaffected.
 
 ## Redeploy
 

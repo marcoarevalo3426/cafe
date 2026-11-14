@@ -109,6 +109,7 @@ export interface Bootstrap {
   templates: MenuItem[];
   demo: boolean;
   testingModeAvailable?: boolean;
+  testEmailSignInAvailable?: boolean;
   paymentsEnabled: boolean;
   paymentWarning?: string;
   cards: {

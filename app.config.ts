@@ -1,7 +1,7 @@
 import type { ExpoConfig } from "expo/config";
 const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
 const config: ExpoConfig = {
-  name: process.env.APP_NAME ?? "Cafe",
+  name: process.env.APP_NAME ?? "NEP Cafe Vouchers",
   slug: process.env.APP_SLUG ?? "cafe",
   version: "0.1.0",
   scheme: process.env.APP_SCHEME ?? "cafe",

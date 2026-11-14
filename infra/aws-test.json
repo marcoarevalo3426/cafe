@@ -17,6 +17,15 @@
       "Type": "String",
       "AllowedPattern": "/[A-Za-z0-9_./-]+",
       "Default": "/cafe-test/config"
+    },
+    "TestEmailSignIn": {
+      "Type": "String",
+      "Default": "disabled",
+      "AllowedValues": [
+        "disabled",
+        "allowlisted"
+      ],
+      "Description": "Temporary test-only email-code bypass for the two allowlisted accounts"
     }
   },
   "Resources": {
@@ -247,7 +256,8 @@
         "com.aws.cloudformation.Context": {
           "why": "On-demand request handling",
           "must": [
-            "Local demo must remain disabled"
+            "Local demo must remain disabled",
+            "Email-code bypass requires explicit allowlisted test setting; disable before production"
           ]
         }
       },
@@ -294,6 +304,10 @@
             "APP_BASE_PATH": "",
             "WORKER_NAME": {
               "Fn::Sub": "${AWS::StackName}-worker"
+            },
+            "APP_STAGE": "test",
+            "TEST_EMAIL_SIGN_IN": {
+              "Ref": "TestEmailSignIn"
             }
           }
         }
@@ -360,7 +374,11 @@
               "Fn::Sub": "https://test.${Web.DefaultDomain}"
             },
             "TRUST_PROXY": "1",
-            "APP_BASE_PATH": ""
+            "APP_BASE_PATH": "",
+            "APP_STAGE": "test",
+            "TEST_EMAIL_SIGN_IN": {
+              "Ref": "TestEmailSignIn"
+            }
           }
         }
       }

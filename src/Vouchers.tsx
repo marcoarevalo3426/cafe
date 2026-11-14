@@ -19,7 +19,7 @@ import {
 } from "./ui";
 import { useApp } from "./context";
 import { api, requestKey } from "./api";
-import { money, validity, type Voucher } from "./types";
+import { emailValid, money, validity, type Voucher } from "./types";
 import { openLink } from "./platform";
 export function Vouchers() {
   const { data, nav, run, refresh } = useApp();
@@ -291,20 +291,27 @@ export function GenerateVouchers() {
     [orgId, setOrgId] = useState(data.organisations[0]?.id ?? ""),
     [orgName, setOrgName] = useState(""),
     [orgEmail, setOrgEmail] = useState(""),
-    [payment, setPayment] = useState(owner ? "cash" : "card"),
+    [payment, setPayment] = useState<"card" | "cash">("card"),
     [cashReceived, setCashReceived] = useState(false);
   const key = useRef(requestKey());
-  const organisation = data.organisations.find((o) => o.id === orgId);
   const total = Number(quantity) * Math.round(Number(amount) * 100);
   const [adminStore, setAdminStore] = useState(data.stores[0]?.id ?? "");
   const store = data.stores.find(
     (s) =>
       s.id ===
-      (data.user?.storeId ??
-        (data.user?.role === "organisation"
+      (data.user?.role === "admin"
+        ? adminStore
+        : data.user?.role === "organisation"
           ? data.organisations[0]?.storeId
-          : adminStore)),
+          : data.user?.storeId),
   );
+  const organisation = data.organisations.find(
+    (o) => o.id === orgId && o.storeId === store?.id,
+  );
+  function choosePayment(next: "card" | "cash") {
+    if (next !== payment) setCashReceived(false);
+    setPayment(next);
+  }
   function validate() {
     if (
       !Number.isInteger(Number(quantity)) ||
@@ -429,6 +436,8 @@ export function GenerateVouchers() {
       ) : step === 1 ? (
         <>
           <Box
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Organisation account"
             style={{
               borderWidth: 1,
               borderColor: "#b3b3b3",
@@ -455,7 +464,10 @@ export function GenerateVouchers() {
                   .map((o) => ({ value: o.id, label: o.name }))}
               />
               <Copy>
-                Email Address: {organisation?.email ?? "No organisations yet"}
+                Email Address:{" "}
+                {organisation
+                  ? organisation.email || "No email provided"
+                  : "No organisations yet"}
               </Copy>
             </>
           ) : (
@@ -466,12 +478,13 @@ export function GenerateVouchers() {
                 onChange={setOrgName}
               />
               <Field
-                label="Email Address"
+                label="Email Address (optional)"
                 value={orgEmail}
                 onChange={setOrgEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
+              <Small>Add an email to send an invitation and receipt.</Small>
             </>
           )}
           <Btn
@@ -480,12 +493,15 @@ export function GenerateVouchers() {
               void run(async () => {
                 if (existing && !organisation)
                   throw new Error("Select an existing organisation.");
+                if (!existing && !orgName.trim())
+                  throw new Error("Enter the company name.");
                 if (
                   !existing &&
-                  (!orgName.trim() || !/^\S+@\S+\.\S+$/.test(orgEmail))
+                  orgEmail.trim() &&
+                  !emailValid(orgEmail.trim())
                 )
                   throw new Error(
-                    "Enter the company name and a valid email address.",
+                    "Enter a valid email address or leave it blank.",
                   );
                 setStep(2);
               })
@@ -534,8 +550,8 @@ export function GenerateVouchers() {
               <Copy style={{ color: "#999" }}>
                 {owner
                   ? existing
-                    ? organisation?.email
-                    : orgEmail
+                    ? organisation?.email || "No email provided"
+                    : orgEmail.trim() || "No email provided"
                   : data.user?.email}
               </Copy>
             </Box>
@@ -546,26 +562,28 @@ export function GenerateVouchers() {
           <Box style={{ gap: 10 }}>
             <Small>PAYMENT METHOD</Small>
             <View
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Payment method"
               style={{
                 borderRadius: 10,
                 overflow: "hidden",
                 backgroundColor: "#e8e8e8",
               }}
             >
+              <Choice
+                selected={payment === "card"}
+                onPress={() => choosePayment("card")}
+              >
+                Card / Apple Pay / Google Pay
+              </Choice>
               {owner && (
                 <Choice
                   selected={payment === "cash"}
-                  onPress={() => setPayment("cash")}
+                  onPress={() => choosePayment("cash")}
                 >
                   Cash in store
                 </Choice>
               )}
-              <Choice
-                selected={payment === "card"}
-                onPress={() => setPayment("card")}
-              >
-                Card / Apple Pay / Google Pay
-              </Choice>
             </View>
             {payment === "cash" ? (
               <Check

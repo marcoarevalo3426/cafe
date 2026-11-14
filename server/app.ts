@@ -17,6 +17,7 @@ import {
 import { checkout, stripe, customer, getCards } from "./integrations";
 import { isLocalTestingRequest } from "./local-testing";
 import { emailConfiguration } from "./email";
+import { testEmailSignInEnabled } from "./test-email-sign-in";
 import { normalizeBasePath } from "../src/paths";
 import type { User, Store, Voucher, Organisation } from "../src/types";
 export function createApp(
@@ -194,6 +195,10 @@ export function createApp(
     respondSession(req, res, await d.testingLogin(req.body.role));
   });
   app.post("/api/auth/request", loginLimit, async (req, res) => {
+    if (testEmailSignInEnabled() && admins.has(email(req.body.email))) {
+      respondSession(req, res, await d.signInForTesting(req.body.email));
+      return;
+    }
     assert(
       d.demo || emailConfiguration(),
       "Email sign-in is not configured yet.",
@@ -238,6 +243,7 @@ export function createApp(
       cards,
       paymentWarning,
       testingModeAvailable: testingAvailable(req),
+      testEmailSignInAvailable: testEmailSignInEnabled(),
     });
   });
   app.post("/api/menu/template", auth, async (req, res) => {
@@ -348,6 +354,15 @@ export function createApp(
   });
   app.post("/api/checkout", auth, async (req, res) => {
     const user: User = res.locals.user;
+    const payment =
+      req.body.type === "vouchers" && req.body.payment === undefined
+        ? "card"
+        : req.body.payment;
+    if (req.body.type === "vouchers")
+      assert(
+        payment === "card" || payment === "cash",
+        "Choose one payment method.",
+      );
     const key = text(req.headers["idempotency-key"], 100);
     let c: Checkout = await d.db.atomic(async () => {
       if (req.body.type === "vouchers") {
@@ -370,7 +385,7 @@ export function createApp(
     if (c.status === "fulfilled")
       return res.json({ result: c.result, checkoutId: c.id });
     assert(c.status === "pending", "This checkout has expired.", 409);
-    if (c.amount === 0 || req.body.payment === "cash") {
+    if (c.amount === 0 || payment === "cash") {
       try {
         assert(
           c.amount === 0 ||

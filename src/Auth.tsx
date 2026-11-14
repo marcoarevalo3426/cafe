@@ -2,10 +2,11 @@ import React, { useState, useRef, useEffect } from "react";
 import { View, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { Box, Copy, Card, Btn, Field, ErrorText, Small, Link } from "./ui";
 import { api, setSession } from "./api";
-import { emailValid, type Role } from "./types";
+import { emailValid, type Role, type User } from "./types";
 import { useApp } from "./context";
 import TestingMode from "./TestingMode";
 import { accountChoices } from "./account-choices";
+import { APP_NAME } from "./brand";
 export default function Auth() {
   const { data, refresh, nav, run, setStoreId, logout } = useApp();
   const [stage, setStage] = useState<"email" | "verify" | "role">(
@@ -32,6 +33,10 @@ export default function Auth() {
     setBusy(true);
     try {
       const r = await api("/auth/request", { email });
+      if (r.user) {
+        await completeSignIn(r);
+        return;
+      }
       setExpires(r.expiresAt);
       setNow(Date.now());
       setDevCode(r.developmentCode ?? "");
@@ -43,6 +48,21 @@ export default function Auth() {
       setBusy(false);
     }
   }
+  async function completeSignIn(result: { user: User; token?: string }) {
+    if (result.token) await setSession(result.token);
+    await refresh();
+    if (!result.user.role) setStage("role");
+    else
+      nav(
+        result.user.role === "owner"
+          ? "Orders"
+          : result.user.role === "organisation"
+            ? "Vouchers"
+            : result.user.role === "admin"
+              ? "Management"
+              : "My Cafe",
+      );
+  }
   async function verify() {
     setError("");
     if (code.join("").length !== 6) {
@@ -52,19 +72,7 @@ export default function Auth() {
     setBusy(true);
     try {
       const r = await api("/auth/verify", { email, code: code.join("") });
-      if (r.token) await setSession(r.token);
-      await refresh();
-      if (!r.user.role) setStage("role");
-      else
-        nav(
-          r.user.role === "owner"
-            ? "Orders"
-            : r.user.role === "organisation"
-              ? "Vouchers"
-              : r.user.role === "admin"
-                ? "Management"
-                : "My Cafe",
-        );
+      await completeSignIn(r);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -101,6 +109,11 @@ export default function Auth() {
       <Card style={{ width: 320, maxWidth: "100%", gap: 24 }}>
         {stage === "email" ? (
           <>
+            <Copy
+              style={{ fontSize: 20, fontWeight: "700", textAlign: "center" }}
+            >
+              {APP_NAME}
+            </Copy>
             <Field
               label="Email"
               value={email}
@@ -115,6 +128,11 @@ export default function Auth() {
               {busy ? "Sending…" : "Sign up"}
             </Btn>
             <TestingMode />
+            {data.testEmailSignInAvailable && (
+              <Small>
+                Designated test accounts can sign in without an email code.
+              </Small>
+            )}
             {error && <ErrorText>{error}</ErrorText>}
           </>
         ) : stage === "verify" ? (

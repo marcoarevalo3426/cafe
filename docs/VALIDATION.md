@@ -60,3 +60,16 @@ See [AWS test deployment](AWS-TEST.md) for the usage-based cost example, resourc
 - Updated the encrypted live SMTP configuration and private deployment settings to the supplied AWS Mail Manager endpoint on port 587 with required STARTTLS and sender `marevalo@nepgroup.com`.
 - Authentication succeeded locally and from the refreshed AWS worker. Certificate validation stayed enabled. The live SecureString was compared against the supplied settings without logging credentials. No test email was sent.
 - Updated `.env.example` with the endpoint, port and sender; username/password remain blank. Credentials are excluded from Git and frontend assets.
+
+
+## Optional voucher email, test sign-in and NEP name — 14 November 2026
+
+- Product name is **NEP Cafe Vouchers** in the website title, signup screen, mobile configuration, loading/dialog branding and verification email. Expo config resolved the requested display name; iOS and Android exports passed.
+- All 42 tests passed against a disposable real DynamoDB table, which was deleted afterward. MySQL passed 41 tests; the DynamoDB-specific chunk test was skipped. TypeScript, production web build and infrastructure schema validation passed.
+- Owner/admin voucher issuance accepts omitted, blank or whitespace organisation emails. It creates vouchers and distinct organisations without empty user accounts or outgoing email jobs. Provided email addresses retain validation, invitation and receipt behavior. Existing organisations without emails can receive more vouchers.
+- Payment defaults to Card / Apple Pay / Google Pay. One state value and a labelled radio group enforce one selected option; the API rejects arrays, combined and invalid payment values. Cash still requires receipt confirmation. Browser checks confirmed blank-email progression and switching between Card and Cash with exactly one selected radio. [Payment selection](voucher-payment-selection.png).
+- The temporary bypass applies only to the two allowlisted addresses, behind the explicit test-stage setting. Their sign-in opens Choose account without an OTP or email job. Other accounts retain verification, spoofed request flags are ignored, and bypass sessions become invalid after the setting is disabled. The default configuration is disabled. This behavior is covered through production-mode API Gateway event tests.
+- Browser checks in an isolated local demo confirmed the new name and direct transition from the allowed email to Choose account. No real email, payment or online voucher was generated during validation.
+
+- Final Amplify job 7 reached `SUCCEED`, and the backend reached `UPDATE_COMPLETE` with `APP_STAGE=test` and `TestEmailSignIn=allowlisted`. The live website shows NEP Cafe Vouchers and the approved test email opened Choose account without a code. [Renamed sign-in screen](nep-cafe-vouchers-signin.png), [live chooser](allowed-test-signin.png). The browser was left at the chooser for the user.
+- The ordinary-account public smoke check passed secure verification/session cookies, role selection, settings, logout and Admin rejection. Its synthetic records were removed. No live voucher or payment was created.

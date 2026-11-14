@@ -7,6 +7,7 @@ import {
 } from "node:crypto";
 import type { Storage, Otp, Session } from "./storage";
 import { verificationEmail } from "./verification-email";
+import { testEmailSignInEnabled } from "./test-email-sign-in";
 import {
   emailValid,
   type User,
@@ -180,6 +181,19 @@ export class Domain {
   async verify(raw: unknown, code: unknown) {
     const address = email(raw);
     await this.consumeCode(address, code);
+    return this.signIn(address);
+  }
+  async signInForTesting(raw: unknown) {
+    assert(testEmailSignInEnabled(), "Test email sign-in is unavailable.", 404);
+    const address = email(raw);
+    assert(
+      admins.has(address),
+      "Email verification is required for this account.",
+      403,
+    );
+    return this.signIn(address, true);
+  }
+  private async signIn(address: string, testEmailSignIn = false) {
     return await this.db.atomic(async () => {
       let user = (await this.db.list<User>("users")).find(
         (x) => x.email === address,
@@ -194,7 +208,7 @@ export class Domain {
           announcements: true,
           ...(admins.has(address) ? { role: "admin" as Role } : {}),
         });
-      return await this.createSession(user);
+      return await this.createSession(user, false, testEmailSignIn);
     });
   }
   private async consumeCode(address: string, code: unknown) {
@@ -221,7 +235,11 @@ export class Domain {
     });
     assert(valid, "Invalid code. Please try again.");
   }
-  private async createSession(user: User, testing = false) {
+  private async createSession(
+    user: User,
+    testing = false,
+    testEmailSignIn = false,
+  ) {
     assert(!user.disabled, "This account has been disabled.", 403);
     const token = (testing ? "testing_" : "") + randomBytes(32).toString("hex");
     const chooseAccount = admins.has(user.email) && !testing;
@@ -230,6 +248,7 @@ export class Domain {
       userId: user.id,
       expires: Date.now() + 30 * 86400000,
       ...(chooseAccount ? { activeRole: null } : {}),
+      ...(testEmailSignIn ? { testEmailSignIn: true } : {}),
     });
     return { token, user: chooseAccount ? { ...user, role: undefined } : user };
   }
@@ -313,6 +332,7 @@ export class Domain {
   async authenticate(token?: string) {
     if (!token || (token.startsWith("testing_") && !this.demo)) return null;
     const session = await this.db.get<Session>("sessions", digest(token));
+    if (session?.testEmailSignIn && !testEmailSignInEnabled()) return null;
     const user =
       session && session.expires > Date.now()
         ? await this.db.get<User>("users", session.userId)
@@ -383,7 +403,8 @@ export class Domain {
         stored &&
           !stored.disabled &&
           session?.userId === stored.id &&
-          session.expires > Date.now(),
+          session.expires > Date.now() &&
+          (!session.testEmailSignIn || testEmailSignInEnabled()),
         "Please sign in to continue.",
         401,
       );
@@ -609,9 +630,15 @@ export class Domain {
       expiresAt,
       orgId: organisation?.id,
       orgName: organisation?.name ?? text(body.orgName, 120),
-      orgEmail: organisation?.email ?? email(body.orgEmail),
+      orgEmail:
+        organisation?.email ??
+        (body.orgEmail === undefined ||
+        body.orgEmail === null ||
+        (typeof body.orgEmail === "string" && !body.orgEmail.trim())
+          ? ""
+          : email(body.orgEmail)),
     };
-    if (!organisation) {
+    if (!organisation && payload.orgEmail) {
       const match = (await this.db.list<Organisation>("organisations")).find(
         (x) => x.email === payload.orgEmail,
       );
@@ -679,32 +706,34 @@ export class Domain {
           email: c.payload.orgEmail,
           contact: "",
         });
-        const invited = (await this.db.list<User>("users")).find(
-          (x) => x.email === org!.email,
-        );
-        if (invited && (!invited.role || invited.role === "organisation"))
-          await this.db.put("users", {
-            ...invited,
-            role: "organisation",
-            orgId: org.id,
-          });
-        else if (!invited)
-          await this.db.put("users", {
-            id: id(),
-            email: org.email,
-            role: "organisation",
-            orgId: org.id,
-            name: org.contact,
-            phone: "",
-            orderNotifications: true,
-            announcements: true,
-          } as User);
-        await this.queue(
-          "email",
-          org.email,
-          "Your Café organisation invitation",
-          `You have been invited to manage ${org.name}'s vouchers. Sign in using this email at the Café app to accept your invitation.`,
-        );
+        if (org.email) {
+          const invited = (await this.db.list<User>("users")).find(
+            (x) => x.email === org!.email,
+          );
+          if (invited && (!invited.role || invited.role === "organisation"))
+            await this.db.put("users", {
+              ...invited,
+              role: "organisation",
+              orgId: org.id,
+            });
+          else if (!invited)
+            await this.db.put("users", {
+              id: id(),
+              email: org.email,
+              role: "organisation",
+              orgId: org.id,
+              name: org.contact,
+              phone: "",
+              orderNotifications: true,
+              announcements: true,
+            } as User);
+          await this.queue(
+            "email",
+            org.email,
+            "Your Café organisation invitation",
+            `You have been invited to manage ${org.name}'s vouchers. Sign in using this email at the Café app to accept your invitation.`,
+          );
+        }
       }
       const vouchers: Voucher[] = [];
       for (let i = 0; i < c.payload.quantity; i++) {
@@ -729,12 +758,13 @@ export class Domain {
           } as Voucher),
         );
       }
-      await this.queue(
-        "email",
-        org.email,
-        "Your Café voucher receipt",
-        `Receipt ${c.id}: ${vouchers.length} vouchers. Total ${c.currency.toUpperCase()} ${(c.amount / 100).toFixed(2)}. Payment: ${payment}. Sign in to allocate your vouchers.`,
-      );
+      if (org.email)
+        await this.queue(
+          "email",
+          org.email,
+          "Your Café voucher receipt",
+          `Receipt ${c.id}: ${vouchers.length} vouchers. Total ${c.currency.toUpperCase()} ${(c.amount / 100).toFixed(2)}. Payment: ${payment}. Sign in to allocate your vouchers.`,
+        );
       result = { voucherCount: vouchers.length, organisation: org };
     } else {
       const p = c.payload;
