@@ -2,6 +2,8 @@
 
 Website: https://test.d2kzvdmp17kwpy.amplifyapp.com
 
+Amplify app name: `nep-cafe-voucher-test`.
+
 Account: `375033595717` (NEP). Region: `ap-southeast-2` (Sydney). Stack: `cafe-test`; private artifact stack: `cafe-test-artifacts`.
 
 ## Design and cost

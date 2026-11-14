@@ -80,9 +80,7 @@
         }
       },
       "Properties": {
-        "Name": {
-          "Fn::Sub": "${AWS::StackName}"
-        },
+        "Name": "nep-cafe-voucher-test",
         "Platform": "WEB",
         "CustomRules": [
           {
