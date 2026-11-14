@@ -261,19 +261,24 @@ export function Choice({
   selected,
   onPress,
   children,
+  disabled = false,
 }: {
   selected: boolean;
   onPress: () => void;
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityState={{ checked: selected }}
+      accessibilityState={{ checked: selected, disabled }}
       aria-checked={selected}
+      aria-disabled={disabled}
+      disabled={disabled}
       onPress={onPress}
       style={{
         minHeight: 56,
+        opacity: disabled ? 0.45 : 1,
         paddingVertical: 12,
         paddingHorizontal: 20,
         flexDirection: "row",

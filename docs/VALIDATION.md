@@ -73,3 +73,13 @@ See [AWS test deployment](AWS-TEST.md) for the usage-based cost example, resourc
 
 - Final Amplify job 7 reached `SUCCEED`, and the backend reached `UPDATE_COMPLETE` with `APP_STAGE=test` and `TestEmailSignIn=allowlisted`. The live website shows NEP Cafe Vouchers and the approved test email opened Choose account without a code. [Renamed sign-in screen](nep-cafe-vouchers-signin.png), [live chooser](allowed-test-signin.png). The browser was left at the chooser for the user.
 - The ordinary-account public smoke check passed secure verification/session cookies, role selection, settings, logout and Admin rejection. Its synthetic records were removed. No live voucher or payment was created.
+
+
+## Local cart payment defaults — 14 November 2026
+
+- The cart now defaults to Voucher for positive usable credit and Card / Apple Pay / Google Pay at zero. The radio group has exactly one selected method, the zero-value voucher option is disabled, and customers can choose Card even when vouchers cover the order.
+- Explicit choices survive balance refreshes, and changing cafes uses that cafe's default. Unrelated, expired, empty and externally reserved vouchers do not count toward available credit. This checkout's own reserved credit remains visible while payment is pending.
+- A voucher shortfall still uses the available voucher amount and sends the remainder to secure card/wallet checkout; the UI explains the remaining amount.
+- Local `npm run check` passed: 44 tests passed and the DynamoDB-only chunk integration test was skipped. TypeScript and production Webpack passed. iOS and Android Hermes exports passed.
+- Isolated local browser checks passed: $20 credit defaults to Voucher; choosing Card deselects Voucher and restores the full card amount; switching back restores voucher credit; a $20.80 cart applies $20 vouchers and displays the $0.80 shortfall; the separate $0 fixture defaults to Card with Voucher disabled. No order, email or payment was submitted.
+- Screenshots: [positive credit](cart-default-voucher.png), [zero credit](cart-default-card.png). All changes were made and validated locally before the GitHub push. No AWS deployment was performed for this update.

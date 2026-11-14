@@ -17,6 +17,12 @@ import { useApp } from "./context";
 import { money, type CartLine } from "./types";
 import { api, requestKey } from "./api";
 import { externalLink, openLink } from "./platform";
+import {
+  cartVoucherBalance,
+  cartPaymentMethod,
+  type CartPaymentChoice,
+  type CartPaymentMethod,
+} from "./cart-payment";
 export function MyCafe() {
   const { data, nav, setStoreId } = useApp();
   return (
@@ -256,8 +262,9 @@ export function Cart() {
     setLastOrder,
     notice,
   } = useApp();
-  const [useVoucher, setUseVoucher] = useState(true),
-    [payment, setPayment] = useState("card"),
+  const [paymentChoice, setPaymentChoice] = useState<CartPaymentChoice | null>(
+      null,
+    ),
     [pending, setPending] = useState(""),
     [editIndex, setEditIndex] = useState<number | null>(null);
   const key = useRef(requestKey());
@@ -273,11 +280,21 @@ export function Cart() {
     total += unit * line.quantity;
     return { line, index, item, unit, variants };
   });
-  const balance = data.vouchers
-    .filter((v) => v.storeId === storeId && !v.reservedBy)
-    .reduce((sum, v) => sum + v.balance, 0);
+  const balance = cartVoucherBalance(
+    data.vouchers,
+    storeId,
+    data.user?.email,
+    pending,
+  );
+  const selectedPayment = cartPaymentMethod(balance, storeId, paymentChoice);
+  const useVoucher = selectedPayment === "voucher";
   const applied = useVoucher ? Math.min(total, balance) : 0;
   const remaining = total - applied;
+  function selectPayment(method: CartPaymentMethod) {
+    if (pending || (method === "voucher" && balance <= 0)) return;
+    setPaymentChoice({ storeId, method });
+    key.current = requestKey();
+  }
   async function submit() {
     await run(async () => {
       if (!cart.length) throw new Error("Your cart is empty.");
@@ -288,7 +305,7 @@ export function Cart() {
           storeId,
           lines: cart,
           useVouchers: useVoucher,
-          payment,
+          payment: "card",
         },
         { "Idempotency-Key": key.current },
       );
@@ -439,28 +456,39 @@ export function Cart() {
             Add more items
           </Link>
           <Copy style={{ fontWeight: "600" }}>Payment method</Copy>
-          <Choice
-            selected={useVoucher}
-            onPress={() => {
-              if (!pending) {
-                setUseVoucher(!useVoucher);
-                key.current = requestKey();
-              }
-            }}
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Payment method"
           >
-            Voucher ({money(balance, store?.currency)})
-          </Choice>
+            <Choice
+              selected={useVoucher}
+              disabled={!!pending || balance <= 0}
+              onPress={() => selectPayment("voucher")}
+            >
+              Voucher ({money(balance, store?.currency)})
+            </Choice>
+            <Choice
+              selected={selectedPayment === "card"}
+              disabled={!!pending}
+              onPress={() => selectPayment("card")}
+            >
+              {data.cards.length
+                ? "Use existing card / Apple Pay / Google Pay"
+                : "Card / Apple Pay / Google Pay"}
+            </Choice>
+          </View>
           {remaining > 0 && (
             <>
-              <Choice
-                selected={payment === "card"}
-                onPress={() => setPayment("card")}
-              >
-                {data.cards.length
-                  ? "Use existing card / Apple Pay / Google Pay"
-                  : "Card / Apple Pay / Google Pay"}
-              </Choice>
-              <Link onPress={() => nav("Payment method")}>Add Credit Card</Link>
+              {useVoucher && (
+                <Small>
+                  Your vouchers cover {money(applied, store?.currency)}. Pay the
+                  remaining {money(remaining, store?.currency)} by card or an
+                  eligible wallet at checkout.
+                </Small>
+              )}
+              <Link disabled={!!pending} onPress={() => nav("Payment method")}>
+                Add Credit Card
+              </Link>
               <Small>
                 {data.paymentsEnabled
                   ? "Available wallets and saved cards appear at secure checkout."
