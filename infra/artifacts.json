@@ -1,0 +1,27 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Private deployment artifact storage for the Cafe Amplify test app.",
+  "Metadata": { "AWSToolsMetrics": { "AWSAgentToolkit": "aws-cloudformation@3" } },
+  "Resources": {
+    "Artifacts": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": { "com.aws.cloudformation.Context": { "why": "Small private Lambda deployment bundles; never stores frontend secrets", "must": ["Retain encryption and public access blocks"] } },
+      "Properties": {
+        "PublicAccessBlockConfiguration": { "BlockPublicAcls": true, "BlockPublicPolicy": true, "IgnorePublicAcls": true, "RestrictPublicBuckets": true },
+        "BucketEncryption": { "ServerSideEncryptionConfiguration": [{ "ServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } }] },
+        "VersioningConfiguration": { "Status": "Enabled" },
+        "LifecycleConfiguration": { "Rules": [{ "Id": "OldVersions", "Status": "Enabled", "NoncurrentVersionExpiration": { "NoncurrentDays": 1 }, "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 } }] }
+      }
+    },
+    "TlsOnly": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": { "Ref": "Artifacts" },
+        "PolicyDocument": { "Version": "2012-10-17", "Statement": [{ "Effect": "Deny", "Principal": "*", "Action": "s3:*", "Resource": [{ "Fn::GetAtt": ["Artifacts", "Arn"] }, { "Fn::Sub": "${Artifacts.Arn}/*" }], "Condition": { "Bool": { "aws:SecureTransport": "false" } } }] }
+      }
+    }
+  },
+  "Outputs": { "Bucket": { "Description": "Private Lambda artifact bucket", "Value": { "Ref": "Artifacts" } } }
+}

@@ -16,14 +16,18 @@ import {
 } from "./domain";
 import { checkout, stripe, customer, getCards } from "./integrations";
 import { isLocalTestingRequest } from "./local-testing";
+import { emailConfiguration } from "./email";
+import { normalizeBasePath } from "../src/paths";
 import type { User, Store, Voucher, Organisation } from "../src/types";
 export function createApp(
   d: Domain,
   {
     origin = "http://localhost:8080",
     production = false,
-  }: { origin?: string; production?: boolean } = {},
+    basePath = process.env.APP_BASE_PATH ?? "",
+  }: { origin?: string; production?: boolean; basePath?: string } = {},
 ) {
+  const prefix = normalizeBasePath(basePath);
   const app = express();
   const testingAvailable = (req: express.Request) =>
     d.demo &&
@@ -54,7 +58,7 @@ export function createApp(
   app.post(
     "/api/stripe/webhook",
     express.raw({ type: "application/json" }),
-    (req, res, next) => {
+    async (req, res, next) => {
       try {
         assert(
           stripe && process.env.STRIPE_WEBHOOK_SECRET,
@@ -66,10 +70,10 @@ export function createApp(
           req.headers["stripe-signature"] as string,
           process.env.STRIPE_WEBHOOK_SECRET,
         );
-        d.db.atomic(() => {
-          if (d.db.get("events", event.id)) return;
+        await d.db.atomic(async () => {
+          if (await d.db.get("events", event.id)) return;
           const session = event.data.object as any;
-          const c = d.db.get<Checkout>(
+          const c = await d.db.get<Checkout>(
             "checkouts",
             session.metadata?.checkoutId ?? "",
           );
@@ -85,15 +89,15 @@ export function createApp(
                 "Payment amount mismatch.",
                 409,
               );
-              d.fulfill(c.id);
+              await d.fulfill(c.id);
             }
             if (
               event.type === "checkout.session.expired" ||
               event.type === "checkout.session.async_payment_failed"
             )
-              d.cancelCheckout(c.id);
+              await d.cancelCheckout(c.id);
           }
-          d.db.put("events", { id: event.id, createdAt: Date.now() });
+          await d.db.put("events", { id: event.id, createdAt: Date.now() });
         });
         res.json({ received: true });
       } catch (e) {
@@ -101,6 +105,10 @@ export function createApp(
       }
     },
   );
+  // Parse before asynchronous middleware: Lambda's synthetic request already has
+  // a Buffer body and can otherwise appear complete before body-parser runs.
+  // The Stripe route above must retain its raw body for signature verification.
+  app.use(express.json({ limit: "1mb" }));
   app.use(
     "/api",
     rateLimit({
@@ -110,8 +118,7 @@ export function createApp(
       legacyHeaders: false,
     }),
   );
-  app.use(express.json({ limit: "1mb" }));
-  app.use("/api", (req, res, next) => {
+  app.use("/api", async (req, res, next) => {
     const incoming = req.headers.origin;
     if (
       incoming &&
@@ -149,7 +156,7 @@ export function createApp(
     res.locals.user =
       sessionToken?.startsWith("testing_") && !testingAvailable(req)
         ? null
-        : d.authenticate(sessionToken);
+        : await d.authenticate(sessionToken);
     next();
   });
   const auth = (req: any, res: any, next: any) => {
@@ -166,7 +173,7 @@ export function createApp(
   const respondSession = (
     req: express.Request,
     res: express.Response,
-    result: ReturnType<Domain["verify"]>,
+    result: Awaited<ReturnType<Domain["verify"]>>,
   ) => {
     res.cookie("cafe_session", result.token, {
       httpOnly: true,
@@ -181,32 +188,36 @@ export function createApp(
         req.headers["x-cafe-client"] === "native" ? result.token : undefined,
     });
   };
-  app.post("/api/auth/testing", loginLimit, (req, res) => {
+  app.post("/api/auth/testing", loginLimit, async (req, res) => {
     assert(testingAvailable(req), "Testing mode is unavailable.", 404);
-    respondSession(req, res, d.testingLogin(req.body.role));
+    respondSession(req, res, await d.testingLogin(req.body.role));
   });
-  app.post("/api/auth/request", loginLimit, (req, res) => {
+  app.post("/api/auth/request", loginLimit, async (req, res) => {
     assert(
-      d.demo || (process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+      d.demo || emailConfiguration(),
       "Email sign-in is not configured yet.",
       503,
     );
-    res.json(d.requestCode(req.body.email));
+    res.json(await d.requestCode(req.body.email));
   });
-  app.post("/api/auth/verify", loginLimit, (req, res) => {
-    const result = d.verify(req.body.email, req.body.code);
+  app.post("/api/auth/verify", loginLimit, async (req, res) => {
+    const result = await d.verify(req.body.email, req.body.code);
     respondSession(req, res, result);
   });
-  app.post("/api/auth/logout", auth, (_req, res) => {
-    d.logout(res.locals.user);
+  app.post("/api/auth/logout", auth, async (_req, res) => {
+    await d.logout(res.locals.user);
     res.clearCookie("cafe_session", { path: "/" });
     res.json({ ok: true });
   });
-  app.post("/api/auth/role", auth, (req, res) => {
-    res.json(d.db.atomic(() => d.setRole(res.locals.user, req.body.role)));
+  app.post("/api/auth/role", auth, async (req, res) => {
+    res.json(
+      await d.db.atomic(
+        async () => await d.setRole(res.locals.user, req.body.role),
+      ),
+    );
   });
   app.get("/api/bootstrap", async (req, res) => {
-    const result = d.bootstrap(res.locals.user);
+    const result = await d.bootstrap(res.locals.user);
     let cards: Awaited<ReturnType<typeof getCards>> = [];
     let paymentWarning: string | undefined;
     try {
@@ -223,32 +234,44 @@ export function createApp(
       testingModeAvailable: testingAvailable(req),
     });
   });
-  app.post("/api/menu/template", auth, (req, res) => {
-    d.db.atomic(() => d.addTemplate(res.locals.user, text(req.body.name)));
+  app.post("/api/menu/template", auth, async (req, res) => {
+    await d.db.atomic(
+      async () => await d.addTemplate(res.locals.user, text(req.body.name)),
+    );
     res.json({ ok: true });
   });
-  app.post("/api/menu", auth, (req, res) => {
-    res.json(d.db.atomic(() => d.saveMenu(res.locals.user, req.body)));
+  app.post("/api/menu", auth, async (req, res) => {
+    res.json(
+      await d.db.atomic(
+        async () => await d.saveMenu(res.locals.user, req.body),
+      ),
+    );
   });
-  app.post("/api/menu/delete", auth, (req, res) => {
-    d.db.atomic(() => d.deleteMenu(res.locals.user, req.body));
+  app.post("/api/menu/delete", auth, async (req, res) => {
+    await d.db.atomic(
+      async () => await d.deleteMenu(res.locals.user, req.body),
+    );
     res.json({ ok: true });
   });
-  app.post("/api/profile", auth, (req, res) =>
-    res.json(d.db.atomic(() => d.saveProfile(res.locals.user, req.body))),
+  app.post("/api/profile", auth, async (req, res) =>
+    res.json(
+      await d.db.atomic(
+        async () => await d.saveProfile(res.locals.user, req.body),
+      ),
+    ),
   );
-  app.post("/api/profile/email/request", auth, loginLimit, (req, res) => {
+  app.post("/api/profile/email/request", auth, loginLimit, async (req, res) => {
     assert(
-      d.demo || (process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+      d.demo || emailConfiguration(),
       "Email delivery is not configured.",
       503,
     );
-    res.json(d.changeEmailRequest(res.locals.user, req.body.email));
+    res.json(await d.changeEmailRequest(res.locals.user, req.body.email));
   });
-  app.post("/api/profile/email/verify", auth, loginLimit, (req, res) =>
-    res.json(d.changeEmailVerify(res.locals.user, req.body.code)),
+  app.post("/api/profile/email/verify", auth, loginLimit, async (req, res) =>
+    res.json(await d.changeEmailVerify(res.locals.user, req.body.code)),
   );
-  app.post("/api/settings", auth, (req, res) => {
+  app.post("/api/settings", auth, async (req, res) => {
     const u = res.locals.user as User;
     assert(
       typeof req.body.orderNotifications === "boolean" &&
@@ -256,49 +279,57 @@ export function createApp(
       "Invalid settings.",
     );
     res.json(
-      d.db.put("users", {
+      await d.db.put("users", {
         ...u,
         orderNotifications: req.body.orderNotifications,
         announcements: req.body.announcements,
       }),
     );
   });
-  app.post("/api/devices", auth, (req, res) => {
+  app.post("/api/devices", auth, async (req, res) => {
     const token = text(req.body.token, 300);
     assert(
       /^(ExponentPushToken|ExpoPushToken)\[[a-zA-Z0-9_-]+\]$/.test(token),
       "Invalid push token.",
     );
-    const previous = d.db.list<any>("devices").find((x) => x.token === token);
-    d.db.put("devices", {
+    const previous = (await d.db.list<any>("devices")).find(
+      (x) => x.token === token,
+    );
+    await d.db.put("devices", {
       id: previous?.id ?? id(),
       userId: res.locals.user.id,
       token,
     });
     res.json({ ok: true });
   });
-  app.post("/api/orders/complete", auth, (req, res) => {
-    d.db.atomic(() => d.completeOrder(res.locals.user, text(req.body.id)));
+  app.post("/api/orders/complete", auth, async (req, res) => {
+    await d.db.atomic(
+      async () => await d.completeOrder(res.locals.user, text(req.body.id)),
+    );
     res.json({ ok: true });
   });
-  app.post("/api/vouchers/delete", auth, (req, res) => {
-    d.db.atomic(() => d.deleteVouchers(res.locals.user, req.body.ids));
+  app.post("/api/vouchers/delete", auth, async (req, res) => {
+    await d.db.atomic(
+      async () => await d.deleteVouchers(res.locals.user, req.body.ids),
+    );
     res.json({ ok: true });
   });
-  app.post("/api/vouchers/share", auth, (req, res) => {
-    d.db.atomic(() => d.share(res.locals.user, req.body));
+  app.post("/api/vouchers/share", auth, async (req, res) => {
+    await d.db.atomic(async () => await d.share(res.locals.user, req.body));
     res.json({ ok: true });
   });
-  app.post("/api/vouchers/allocate", auth, (req, res) => {
-    d.db.atomic(() => d.allocate(res.locals.user, req.body));
+  app.post("/api/vouchers/allocate", auth, async (req, res) => {
+    await d.db.atomic(async () => await d.allocate(res.locals.user, req.body));
     res.json({ ok: true });
   });
-  app.post("/api/recipients", auth, (req, res) => {
-    d.db.atomic(() => d.recipients(res.locals.user, req.body));
+  app.post("/api/recipients", auth, async (req, res) => {
+    await d.db.atomic(
+      async () => await d.recipients(res.locals.user, req.body),
+    );
     res.json({ ok: true });
   });
-  app.post("/api/feedback", auth, (req, res) => {
-    d.db.put("feedback", {
+  app.post("/api/feedback", auth, async (req, res) => {
+    await d.db.put("feedback", {
       id: id(),
       userId: res.locals.user.id,
       email: res.locals.user.email,
@@ -312,14 +343,14 @@ export function createApp(
   app.post("/api/checkout", auth, async (req, res) => {
     const user: User = res.locals.user;
     const key = text(req.headers["idempotency-key"], 100);
-    let c: Checkout = d.db.atomic(() => {
+    let c: Checkout = await d.db.atomic(async () => {
       if (req.body.type === "vouchers") {
-        const existing = d.db
-          .list<Checkout>("checkouts")
-          .find((c) => c.userId === user.id && c.key === key);
+        const existing = (await d.db.list<Checkout>("checkouts")).find(
+          (c) => c.userId === user.id && c.key === key,
+        );
         if (existing) return existing;
-        const draft = d.generateDraft(user, req.body);
-        return d.newCheckout(
+        const draft = await d.generateDraft(user, req.body);
+        return await d.newCheckout(
           user,
           "vouchers",
           draft.store,
@@ -328,7 +359,7 @@ export function createApp(
           key,
         );
       }
-      return d.orderDraft(user, req.body, key);
+      return await d.orderDraft(user, req.body, key);
     });
     if (c.status === "fulfilled")
       return res.json({ result: c.result, checkoutId: c.id });
@@ -343,12 +374,13 @@ export function createApp(
           "Only cafe owners can confirm cash received.",
           403,
         );
-        const result = d.db.atomic(() =>
-          d.fulfill(c.id, c.amount === 0 ? "voucher" : "cash in store"),
+        const result = await d.db.atomic(
+          async () =>
+            await d.fulfill(c.id, c.amount === 0 ? "voucher" : "cash in store"),
         );
         return res.json({ result, checkoutId: c.id });
       } catch (e) {
-        d.db.atomic(() => d.cancelCheckout(c.id));
+        await d.db.atomic(async () => await d.cancelCheckout(c.id));
         throw e;
       }
     }
@@ -358,15 +390,15 @@ export function createApp(
         "Card payments have not been configured. Choose vouchers or contact the cafe.",
         503,
       );
-      const url = await checkout(d, c, user, origin);
+      const url = await checkout(d, c, user, origin + prefix);
       res.json({ url, checkoutId: c.id });
     } catch (e) {
-      d.db.atomic(() => d.cancelCheckout(c.id));
+      await d.db.atomic(async () => await d.cancelCheckout(c.id));
       throw e;
     }
   });
   app.get("/api/checkout/:id", auth, async (req, res) => {
-    let c = d.db.get<Checkout>("checkouts", String(req.params.id));
+    let c = await d.db.get<Checkout>("checkouts", String(req.params.id));
     assert(c && c.userId === res.locals.user.id, "Checkout not found.", 404);
     if (c.status === "pending" && c.stripeId && stripe) {
       const s = await stripe.checkout.sessions.retrieve(c.stripeId);
@@ -375,15 +407,15 @@ export function createApp(
           s.amount_total === c.amount && s.currency === c.currency,
           "Payment amount mismatch.",
         );
-        d.db.atomic(() => d.fulfill(c!.id));
-        c = d.db.get("checkouts", c.id)!;
+        await d.db.atomic(async () => await d.fulfill(c!.id));
+        c = (await d.db.get("checkouts", c.id))!;
       } else if (s.status === "expired")
-        d.db.atomic(() => d.cancelCheckout(c!.id));
+        await d.db.atomic(async () => await d.cancelCheckout(c!.id));
     }
     res.json({ status: c.status, result: c.result });
   });
   app.post("/api/checkout/cancel", auth, async (req, res) => {
-    const c = d.db.get<Checkout>("checkouts", text(req.body.id));
+    const c = await d.db.get<Checkout>("checkouts", text(req.body.id));
     assert(c && c.userId === res.locals.user.id, "Checkout not found.", 404);
     if (c.stripeId && stripe) {
       const s = await stripe.checkout.sessions.retrieve(c.stripeId);
@@ -394,7 +426,7 @@ export function createApp(
       );
       if (s.status === "open") await stripe.checkout.sessions.expire(s.id);
     }
-    d.db.atomic(() => d.cancelCheckout(c.id));
+    await d.db.atomic(async () => await d.cancelCheckout(c.id));
     res.json({ ok: true });
   });
   app.post("/api/cards/setup", auth, async (_req, res) => {
@@ -405,8 +437,8 @@ export function createApp(
       mode: "setup",
       customer: customerId,
       currency: "aud",
-      success_url: `${origin}/?card=saved`,
-      cancel_url: `${origin}/?card=cancelled`,
+      success_url: `${origin}${prefix}/?card=saved`,
+      cancel_url: `${origin}${prefix}/?card=cancelled`,
     });
     res.json({ url: s.url });
   });
@@ -421,36 +453,38 @@ export function createApp(
     await stripe.paymentMethods.detach(method.id);
     res.json({ ok: true });
   });
-  app.post("/api/admin", auth, (req, res) => {
+  app.post("/api/admin", auth, async (req, res) => {
     const user: User = res.locals.user;
     d.require(user, ["admin"]);
     const b = req.body;
-    const result = d.db.atomic(() => {
+    const result = await d.db.atomic(async () => {
       switch (b.action) {
         case "settings":
-          return d.db.put("settings", {
+          return await d.db.put("settings", {
             id: "global",
             subscriptionPrice: integer(b.price, 0, 1000000),
           });
         case "announcement": {
           const message = text(b.message, 1000);
-          for (const u of d.db
-            .list<User>("users")
-            .filter((u) => u.announcements && !u.disabled))
-            d.queue("push", u.id, "Cafe announcement", message, {
+          for (const u of (await d.db.list<User>("users")).filter(
+            (u) => u.announcements && !u.disabled,
+          ))
+            await d.queue("push", u.id, "Cafe announcement", message, {
               kind: "announcement",
             });
           return { ok: true };
         }
         case "user": {
           const address = email(b.email);
-          let u = d.db.list<User>("users").find((x) => x.email === address);
+          let u = (await d.db.list<User>("users")).find(
+            (x) => x.email === address,
+          );
           assert(
             !b.role || ["owner", "customer", "organisation"].includes(b.role),
             "Invalid role.",
           );
           if (!u) {
-            u = d.db.put("users", {
+            u = await d.db.put("users", {
               id: id(),
               email: address,
               name: typeof b.name === "string" ? b.name.slice(0, 120) : "",
@@ -458,7 +492,7 @@ export function createApp(
               orderNotifications: true,
               announcements: true,
             });
-            d.setRole(u, b.role ?? "customer");
+            await d.setRole(u, b.role ?? "customer");
           } else {
             assert(
               u.role !== "admin" || !b.disabled,
@@ -471,55 +505,52 @@ export function createApp(
                 "Only customer accounts can be reassigned.",
               );
               u.role = undefined;
-              d.setRole(u, b.role);
+              await d.setRole(u, b.role);
             }
           }
           const updated = {
-            ...d.db.get<User>("users", u.id)!,
+            ...(await d.db.get<User>("users", u.id))!,
             name: typeof b.name === "string" ? b.name.slice(0, 120) : u.name,
             phone: typeof b.phone === "string" ? b.phone.slice(0, 40) : u.phone,
             disabled: !!b.disabled,
           };
-          d.db.put("users", updated);
+          await d.db.put("users", updated);
           return { ok: true };
         }
         case "delete-user": {
-          const target = d.db.get<User>("users", text(b.id));
+          const target = await d.db.get<User>("users", text(b.id));
           assert(
             target && target.role !== "admin",
             "Account cannot be deleted.",
           );
-          const storeIds = d.db
-            .list<Store>("stores")
+          const storeIds = (await d.db.list<Store>("stores"))
             .filter((s) => s.ownerId === target.id)
             .map((s) => s.id);
           assert(
-            !d.db
-              .list<Checkout>("checkouts")
-              .some(
-                (c) =>
-                  c.status === "pending" &&
-                  (c.userId === target.id || storeIds.includes(c.storeId)),
-              ),
+            !(await d.db.list<Checkout>("checkouts")).some(
+              (c) =>
+                c.status === "pending" &&
+                (c.userId === target.id || storeIds.includes(c.storeId)),
+            ),
             "Resolve pending checkouts before deleting this account.",
             409,
           );
           if (target.orgId) {
             for (const kind of ["vouchers", "recipients"])
-              for (const row of d.db.list<any>(kind))
-                if (row.orgId === target.orgId) d.db.delete(kind, row.id);
-            d.db.delete("organisations", target.orgId);
+              for (const row of await d.db.list<any>(kind))
+                if (row.orgId === target.orgId) await d.db.delete(kind, row.id);
+            await d.db.delete("organisations", target.orgId);
           }
-          for (const v of d.db
-            .list<Voucher>("vouchers")
-            .filter((v) => v.email === target.email)) {
+          for (const v of (await d.db.list<Voucher>("vouchers")).filter(
+            (v) => v.email === target.email,
+          )) {
             assert(
               !v.reservedBy,
               "Resolve pending checkouts before deleting this account.",
               409,
             );
             delete v.email;
-            d.db.put("vouchers", v);
+            await d.db.put("vouchers", v);
           }
           for (const kind of [
             "vouchers",
@@ -530,22 +561,22 @@ export function createApp(
             "checkouts",
             "builds",
           ])
-            for (const row of d.db.list<any>(kind))
+            for (const row of await d.db.list<any>(kind))
               if (storeIds.includes(row.storeId) || row.userId === target.id)
-                d.db.delete(kind, row.id);
-          for (const r of d.db.list<any>("recipients"))
-            if (!d.db.get("organisations", r.orgId))
-              d.db.delete("recipients", r.id);
-          for (const sid of storeIds) d.db.delete("stores", sid);
-          d.logout(target);
-          d.db.delete("users", target.id);
+                await d.db.delete(kind, row.id);
+          for (const r of await d.db.list<any>("recipients"))
+            if (!(await d.db.get("organisations", r.orgId)))
+              await d.db.delete("recipients", r.id);
+          for (const sid of storeIds) await d.db.delete("stores", sid);
+          await d.logout(target);
+          await d.db.delete("users", target.id);
           return { ok: true };
         }
         case "subscription": {
-          const s = d.db.get<Store>("stores", text(b.storeId));
+          const s = await d.db.get<Store>("stores", text(b.storeId));
           assert(s, "Cafe not found.", 404);
           assert(["free", "paid"].includes(b.tier), "Invalid tier.");
-          return d.db.put("stores", {
+          return await d.db.put("stores", {
             ...s,
             tier: b.tier,
             subscription:
@@ -561,15 +592,15 @@ export function createApp(
           );
           for (const row of b.cafes) {
             const address = email(row.ownerEmail);
-            let owner = d.db
-              .list<User>("users")
-              .find((x) => x.email === address);
+            let owner = (await d.db.list<User>("users")).find(
+              (x) => x.email === address,
+            );
             assert(
               !owner?.role || owner.role === "owner",
               "An imported email belongs to a different role.",
             );
             if (!owner)
-              owner = d.db.put("users", {
+              owner = await d.db.put("users", {
                 id: id(),
                 email: address,
                 name:
@@ -580,9 +611,9 @@ export function createApp(
                 orderNotifications: true,
                 announcements: true,
               });
-            if (!owner.role) owner = d.setRole(owner, "owner");
-            const s = d.db.get<Store>("stores", owner.storeId!)!;
-            d.db.put("stores", {
+            if (!owner.role) owner = await d.setRole(owner, "owner");
+            const s = (await d.db.get<Store>("stores", owner.storeId!))!;
+            await d.db.put("stores", {
               ...s,
               name: text(row.name, 120),
               address:
@@ -594,9 +625,9 @@ export function createApp(
           return { imported: b.cafes.length };
         }
         case "build": {
-          const store = d.db.get<Store>("stores", text(b.storeId));
+          const store = await d.db.get<Store>("stores", text(b.storeId));
           assert(store, "Cafe not found.", 404);
-          return d.db.put("builds", {
+          return await d.db.put("builds", {
             id: randomUUID(),
             storeId: store.id,
             name: store.name,
@@ -609,9 +640,9 @@ export function createApp(
     });
     res.json(result);
   });
-  app.get("/api/admin/build/:id", auth, (req, res) => {
+  app.get("/api/admin/build/:id", auth, async (req, res) => {
     d.require(res.locals.user, ["admin"]);
-    const build = d.db.get<any>("builds", String(req.params.id));
+    const build = await d.db.get<any>("builds", String(req.params.id));
     assert(build, "App configuration not found.", 404);
     res.json({
       name: build.name,
@@ -632,9 +663,13 @@ export function createApp(
       return res.status(404).json({ error: "Not found." });
     res.sendFile(resolve("dist/index.html"));
   });
-  app.use((err: any, _req: any, res: any, _next: any) => {
+  app.use(async (err: any, _req: any, res: any, _next: any) => {
     if (!(err instanceof AppError))
-      d.log(`Request failed: ${err?.type ?? err?.name ?? "Error"}`);
+      try {
+        await d.log(`Request failed: ${err?.type ?? err?.name ?? "Error"}`);
+      } catch {
+        /* Database errors must still receive a JSON response. */
+      }
     res
       .status(
         err instanceof AppError
@@ -650,5 +685,11 @@ export function createApp(
             : "Something went wrong. Please try again.",
       });
   });
+  if (prefix) {
+    const root = express();
+    root.disable("x-powered-by");
+    root.use(prefix, app);
+    return root;
+  }
   return app;
 }

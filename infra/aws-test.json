@@ -1,0 +1,534 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Cafe online test: Amplify static hosting, on-demand Lambda API and DynamoDB; avoids always-on database and NAT charges.",
+  "Metadata": {
+    "AWSToolsMetrics": {
+      "AWSAgentToolkit": "aws-cloudformation@3"
+    }
+  },
+  "Parameters": {
+    "ArtifactBucket": {
+      "Type": "String"
+    },
+    "ArtifactKey": {
+      "Type": "String"
+    },
+    "ConfigurationParameter": {
+      "Type": "String",
+      "AllowedPattern": "/[A-Za-z0-9_./-]+",
+      "Default": "/cafe-test/config"
+    }
+  },
+  "Resources": {
+    "Data": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Test persistence without an idle database instance; snapshot chunks preserve existing domain transactions",
+          "must": [
+            "Keep revision conditions and pk/sk schema; retained on stack deletion"
+          ]
+        }
+      },
+      "Properties": {
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "sk",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "pk",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "sk",
+            "KeyType": "RANGE"
+          }
+        ],
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "OnDemandThroughput": {
+          "MaxReadRequestUnits": 1000,
+          "MaxWriteRequestUnits": 1000
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "cafe-test"
+          }
+        ]
+      }
+    },
+    "Web": {
+      "Type": "AWS::Amplify::App",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Static frontend with same-origin API proxy; manual build upload avoids paid hosted build minutes",
+          "must": [
+            "API rules precede SPA fallback; no secrets in frontend settings"
+          ]
+        }
+      },
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}"
+        },
+        "Platform": "WEB",
+        "CustomRules": [
+          {
+            "Source": "/api/<*>",
+            "Target": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Fn::GetAtt": [
+                      "HttpApi",
+                      "ApiEndpoint"
+                    ]
+                  },
+                  "/api/<*>"
+                ]
+              ]
+            },
+            "Status": "200"
+          },
+          {
+            "Source": "/health",
+            "Target": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Fn::GetAtt": [
+                      "HttpApi",
+                      "ApiEndpoint"
+                    ]
+                  },
+                  "/health"
+                ]
+              ]
+            },
+            "Status": "200"
+          },
+          {
+            "Source": "/<*>",
+            "Target": "/index.html",
+            "Status": "404-200"
+          }
+        ],
+        "CustomHeaders": "customHeaders:\n  - pattern: '**/*'\n    headers:\n      - key: X-Content-Type-Options\n        value: nosniff\n      - key: X-Frame-Options\n        value: DENY\n      - key: Referrer-Policy\n        value: strict-origin-when-cross-origin\n      - key: Strict-Transport-Security\n        value: max-age=31536000\n      - key: Content-Security-Policy\n        value: \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'\"\n"
+      }
+    },
+    "TestBranch": {
+      "Type": "AWS::Amplify::Branch",
+      "Properties": {
+        "AppId": {
+          "Fn::GetAtt": [
+            "Web",
+            "AppId"
+          ]
+        },
+        "BranchName": "test",
+        "Stage": "DEVELOPMENT",
+        "EnableAutoBuild": false
+      }
+    },
+    "HttpApi": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-api"
+        },
+        "ProtocolType": "HTTP"
+      }
+    },
+    "RuntimeRole": {
+      "Type": "AWS::IAM::Role",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Shared API/worker execution role scoped to this table, one secure configuration parameter and two log groups",
+          "must": [
+            "No embedded AWS credentials; no access to unrelated application data"
+          ]
+        }
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "CafeRuntime",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "TestDatabase",
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:ConditionCheckItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:UpdateItem"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Data",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Sid": "ReadMailConfiguration",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameter"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ConfigurationParameter}"
+                  }
+                },
+                {
+                  "Sid": "FunctionLogs",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-api:*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-worker:*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DispatchOutbox",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lambda:InvokeFunction"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-worker"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApiFunction": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": "ApiLogs",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "On-demand request handling",
+          "must": [
+            "Local demo must remain disabled"
+          ]
+        }
+      },
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "${AWS::StackName}-api"
+        },
+        "Runtime": "nodejs22.x",
+        "Architectures": [
+          "arm64"
+        ],
+        "Handler": "index.handler",
+        "MemorySize": 256,
+        "Timeout": 28,
+        "ReservedConcurrentExecutions": 3,
+        "Role": {
+          "Fn::GetAtt": [
+            "RuntimeRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ArtifactKey"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "NODE_ENV": "production",
+            "DEV_DEMO": "0",
+            "DYNAMODB_TABLE": {
+              "Ref": "Data"
+            },
+            "CONFIG_PARAMETER": {
+              "Ref": "ConfigurationParameter"
+            },
+            "APP_ORIGIN": {
+              "Fn::Sub": "https://test.${Web.DefaultDomain}"
+            },
+            "TRUST_PROXY": "1",
+            "APP_BASE_PATH": "",
+            "WORKER_NAME": {
+              "Fn::Sub": "${AWS::StackName}-worker"
+            }
+          }
+        }
+      }
+    },
+    "ApiLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${AWS::StackName}-api"
+        },
+        "RetentionInDays": 7
+      }
+    },
+    "WorkerFunction": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": "WorkerLogs",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Retry outbox delivery and reconcile checkouts without a continuously running worker",
+          "must": [
+            "Local demo must remain disabled",
+            "Worker concurrency must remain one"
+          ]
+        }
+      },
+      "Properties": {
+        "FunctionName": {
+          "Fn::Sub": "${AWS::StackName}-worker"
+        },
+        "Runtime": "nodejs22.x",
+        "Architectures": [
+          "arm64"
+        ],
+        "Handler": "index.handler",
+        "MemorySize": 256,
+        "Timeout": 50,
+        "ReservedConcurrentExecutions": 1,
+        "Role": {
+          "Fn::GetAtt": [
+            "RuntimeRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ArtifactKey"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "NODE_ENV": "production",
+            "DEV_DEMO": "0",
+            "DYNAMODB_TABLE": {
+              "Ref": "Data"
+            },
+            "CONFIG_PARAMETER": {
+              "Ref": "ConfigurationParameter"
+            },
+            "APP_ORIGIN": {
+              "Fn::Sub": "https://test.${Web.DefaultDomain}"
+            },
+            "TRUST_PROXY": "1",
+            "APP_BASE_PATH": ""
+          }
+        }
+      }
+    },
+    "WorkerLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${AWS::StackName}-worker"
+        },
+        "RetentionInDays": 7
+      }
+    },
+    "Integration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "ApiFunction",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 29000
+      }
+    },
+    "ApiRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "$default",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "Integration"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "Stage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "ThrottlingBurstLimit": 10,
+          "ThrottlingRateLimit": 5
+        }
+      }
+    },
+    "ApiInvoke": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Ref": "ApiFunction"
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceAccount": {
+          "Ref": "AWS::AccountId"
+        },
+        "SourceArn": {
+          "Fn::Sub": "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*"
+        }
+      }
+    },
+    "WorkerSchedule": {
+      "Type": "AWS::Events::Rule",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "One-minute outbox polling delivers sign-in email while API compute stays idle",
+          "must": [
+            "Target only worker; worker concurrency one prevents overlapping SMTP sends"
+          ]
+        }
+      },
+      "Properties": {
+        "ScheduleExpression": "rate(1 minute)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Id": "CafeWorker",
+            "Arn": {
+              "Fn::GetAtt": [
+                "WorkerFunction",
+                "Arn"
+              ]
+            },
+            "RetryPolicy": {
+              "MaximumEventAgeInSeconds": 60,
+              "MaximumRetryAttempts": 0
+            }
+          }
+        ]
+      }
+    },
+    "WorkerInvoke": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Ref": "WorkerFunction"
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceAccount": {
+          "Ref": "AWS::AccountId"
+        },
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "WorkerSchedule",
+            "Arn"
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "AppId": {
+      "Description": "Amplify app identifier",
+      "Value": {
+        "Fn::GetAtt": [
+          "Web",
+          "AppId"
+        ]
+      }
+    },
+    "Website": {
+      "Description": "Cafe test website",
+      "Value": {
+        "Fn::Sub": "https://test.${Web.DefaultDomain}"
+      }
+    },
+    "ApiUrl": {
+      "Description": "Direct API endpoint",
+      "Value": {
+        "Fn::GetAtt": [
+          "HttpApi",
+          "ApiEndpoint"
+        ]
+      }
+    },
+    "Table": {
+      "Description": "DynamoDB test database",
+      "Value": {
+        "Ref": "Data"
+      }
+    },
+    "Worker": {
+      "Description": "Outbox worker function",
+      "Value": {
+        "Ref": "WorkerFunction"
+      }
+    }
+  }
+}

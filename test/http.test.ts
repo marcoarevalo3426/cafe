@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Database } from "../server/db";
+import { Database } from "./support/database";
 import { Domain } from "../server/domain";
 import { createApp } from "../server/app";
 import { parseCafeImport } from "../src/import";
 test("HTTP authentication, session cookie, access control and logout work end to end", async () => {
   const db = new Database(":memory:");
   const d = new Domain(db, true);
-  d.seed();
+  await d.seed();
   const server = createApp(d).listen(0, "127.0.0.1");
   await new Promise<void>((r) => server.on("listening", r));
   const port = (server.address() as any).port;
@@ -66,7 +66,7 @@ test("HTTP authentication, session cookie, access control and logout work end to
     );
   } finally {
     await new Promise<void>((r, j) => server.close((e) => (e ? j(e) : r())));
-    db.close();
+    await db.close();
   }
 });
 test("CSV import handles quoted commas, escaped quotes, BOM, and JSON", () => {
@@ -87,4 +87,32 @@ test("CSV import handles quoted commas, escaped quotes, BOM, and JSON", () => {
   assert.throws(() =>
     parseCafeImport('name,ownerEmail\n"unclosed,a@example.com'),
   );
+});
+test("the hosted app serves its API under /cafe without taking over the domain root", async () => {
+  const db = new Database();
+  const d = new Domain(db, true);
+  await d.seed();
+  const server = createApp(d, { basePath: "/cafe" }).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.on("listening", resolve));
+  const root = `http://127.0.0.1:${(server.address() as any).port}`;
+  try {
+    assert.equal((await fetch(`${root}/api/bootstrap`)).status, 404);
+    assert.equal((await fetch(`${root}/cafe/health`)).status, 200);
+    const response = await fetch(`${root}/cafe/api/auth/testing`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "customer" }),
+    });
+    assert.equal(response.status, 200);
+    const cookie = response.headers.get("set-cookie")!.split(";")[0];
+    const data = await (
+      await fetch(`${root}/cafe/api/bootstrap`, { headers: { Cookie: cookie } })
+    ).json();
+    assert.equal(data.user.role, "customer");
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((e) => (e ? reject(e) : resolve())),
+    );
+    await db.close();
+  }
 });

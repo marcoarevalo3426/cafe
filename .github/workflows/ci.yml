@@ -7,6 +7,20 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: cafe_ci_test_only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -pcafe_ci_test_only"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+    env:
+      MYSQL_INTEGRATION: '1'
+      MYSQL_TEST_HOST: 127.0.0.1
+      MYSQL_TEST_PASSWORD: cafe_ci_test_only
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.1.0
@@ -15,6 +29,8 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run check
+      - run: npm run build:server
+      - run: npm run build:aws
       - run: npx expo install --check
       - run: npx expo export --platform ios --platform android --output-dir native-export
       - uses: actions/upload-artifact@v7.0.2

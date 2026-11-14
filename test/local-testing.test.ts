@@ -2,7 +2,7 @@ import { test } from "node:test";
 import { request as httpRequest } from "node:http";
 import assert from "node:assert/strict";
 import type { Request } from "express";
-import { Database } from "../server/db";
+import { Database } from "./support/database";
 import { Domain } from "../server/domain";
 import { createApp } from "../server/app";
 import { isLocalTestingRequest } from "../server/local-testing";
@@ -62,7 +62,7 @@ test("local testing rejects public hosts, remote peers, and forged forwarded hea
 test("testing mode creates sessions for fixed demo accounts including admin without sending email", async () => {
   const db = new Database(":memory:");
   const d = new Domain(db, true);
-  d.seed();
+  await d.seed();
   const server = createApp(d).listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.on("listening", resolve));
   const base = `http://127.0.0.1:${(server.address() as any).port}/api`;
@@ -112,10 +112,12 @@ test("testing mode creates sessions for fixed demo accounts including admin with
       body: JSON.stringify({ role: "customer" }),
     });
     const nativeSession = await native.json();
-    assert.equal(d.authenticate(nativeSession.token)?.role, "customer");
-    assert.equal(db.list("jobs").length, 0);
+    assert.equal((await d.authenticate(nativeSession.token))?.role, "customer");
+    assert.equal((await db.list("jobs")).length, 0);
     assert.equal(
-      db.list<any>("users").some((u) => u.email === "other@example.com"),
+      (await db.list<any>("users")).some(
+        (u) => u.email === "other@example.com",
+      ),
       false,
     );
     const invalid = await fetch(`${base}/auth/testing`, {
@@ -128,7 +130,7 @@ test("testing mode creates sessions for fixed demo accounts including admin with
     await new Promise<void>((resolve, reject) =>
       server.close((e) => (e ? reject(e) : resolve())),
     );
-    db.close();
+    await db.close();
   }
 });
 
@@ -139,7 +141,7 @@ for (const config of [
   test(`testing login is unavailable with demo=${config.demo}, production=${config.production}`, async () => {
     const db = new Database(":memory:");
     const d = new Domain(db, config.demo);
-    d.seed();
+    await d.seed();
     const server = createApp(d, { production: config.production }).listen(
       0,
       "127.0.0.1",
@@ -161,15 +163,12 @@ for (const config of [
         ).status,
         404,
       );
-      assert.equal(
-        db.sql.prepare("SELECT COUNT(*) AS n FROM sessions").get()!.n,
-        0,
-      );
+      assert.equal((await db.list("sessions")).length, 0);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),
       );
-      db.close();
+      await db.close();
     }
   });
 }
@@ -177,8 +176,8 @@ for (const config of [
 test("public requests cannot expose Testing mode or reuse a local test session", async () => {
   const db = new Database(":memory:");
   const d = new Domain(db, true);
-  d.seed();
-  const session = d.testingLogin("admin");
+  await d.seed();
+  const session = await d.testingLogin("admin");
   const server = createApp(d).listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.on("listening", resolve));
   const base = `http://127.0.0.1:${(server.address() as any).port}/api`;
@@ -217,11 +216,11 @@ test("public requests cannot expose Testing mode or reuse a local test session",
       401,
     );
     d.demo = false;
-    assert.equal(d.authenticate(session.token), null);
+    assert.equal(await d.authenticate(session.token), null);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((e) => (e ? reject(e) : resolve())),
     );
-    db.close();
+    await db.close();
   }
 });

@@ -9,3 +9,7 @@ dist
 work
 test-results
 *.log
+.env.*
+!.env.example
+build
+hosting

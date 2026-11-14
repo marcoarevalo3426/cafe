@@ -1,8 +1,10 @@
 # Cafe
 
-React Native + TypeScript application for cafe ordering, corporate vouchers, and cafe management. The same Emotion Native components run on iOS, Android, and the Webpack website through React Native Web. An Express API persists application data in SQLite.
+React Native + TypeScript application for cafe ordering, corporate vouchers, and cafe management. The same Emotion Native components run on iOS, Android, and the Webpack website through React Native Web. An Express API uses MySQL for conventional hosting and DynamoDB on demand for the low-cost AWS test deployment.
 
-This is a runnable implementation with an explicit local demo. Production email, Stripe payments, mobile signing, OTA delivery, and push delivery require your service accounts and credentials. No production deployment, live charge, real email, or app-store submission has been performed.
+Online test: [Open Cafe](https://test.d2kzvdmp17kwpy.amplifyapp.com).
+
+The AWS test uses Amplify Hosting, a Lambda API, and DynamoDB. SMTP configuration is stored in AWS Systems Manager Parameter Store as a SecureString. Stripe payments, mobile signing, OTA delivery, and push delivery require their service credentials. See [AWS test deployment](docs/AWS-TEST.md) for deployment, costs, and cleanup.
 
 ## Run locally
 
@@ -10,7 +12,10 @@ Use Node.js 24 or newer.
 
 ```sh
 npm ci
-DEV_DEMO=1 npm run dev
+cp .env.example .env
+# Configure an existing local MySQL 8.4 database and user in .env.
+# Set DEV_DEMO=1 for local demo accounts.
+npm run dev
 ```
 
 Open <http://localhost:8080>. The API listens on port 4000.
@@ -22,11 +27,11 @@ For quick local testing, click **Testing mode** in the signup form and choose Cu
 | Cafe owner | owner@cafe.test |
 | Customer | customer@cafe.test |
 | Organisation | organisation@cafe.test |
-| Administrator | marco.arevalo3426@gmail.com or marevalo@nepgroup.com |
+| Administrator | admin@cafe.test |
 
 Use any new email to exercise registration and role selection. In production, only the two administrator emails become administrators, and they must receive and verify real email codes. New owners receive their own empty cafe; the Gordon demo data belongs only to the demo owner. Organisation accounts can purchase and allocate vouchers after a cafe invites them.
 
-The local database is `data/cafe.sqlite`; it is excluded from Git. Unit tests use separate in-memory databases and never use the demo or production database.
+Local persistence requires the MySQL settings in `.env`; database connections and transactions use `mysql2`. Unit tests use an isolated SQLite test double by default. The integration modes run the same suite against isolated MySQL databases or a disposable DynamoDB table; they never use application data. Legacy SQLite data can be migrated with `npm run migrate:sqlite -- --source data/cafe.sqlite --dry-run`, then without `--dry-run` into an empty MySQL destination. Demo data requires explicit `--allow-demo`. The source remains read-only.
 
 ## Preview
 
@@ -42,15 +47,16 @@ flowchart TD
     UI[Shared TypeScript screens / Emotion Native] --> IOS
     UI --> AND
     UI --> WEB
-    PROXY[Caddy — HTTPS] --> WEB
-    PROXY --> API[Express API — authentication and role / cafe checks]
+    HOST[Amplify Hosting — HTTPS] --> WEB
+    WEB --> GATE[Same-origin API proxy / HTTP API]
+    GATE --> API[Lambda / Express — authentication and role / cafe checks]
     API --> DOMAIN[Domain rules — integer money / voucher allocation / orders]
-    DOMAIN --> DB[(SQLite — transactional records and unique indexes)]
+    DOMAIN --> DB[(DynamoDB test / MySQL conventional hosting)]
     API --> CHECKOUT[Stripe hosted Checkout / saved card setup]
     CHECKOUT --> HOOK[Signed webhook + reconciliation]
     HOOK --> DOMAIN
     DOMAIN --> OUTBOX[Persistent email / notification outbox]
-    OUTBOX --> EMAIL[Resend — codes / invitations / receipts]
+    OUTBOX --> EMAIL[SMTP over TLS — codes / invitations / receipts]
     OUTBOX --> PUSH[Expo Push Service — APNs / FCM]
     PUSH --> IOS
     PUSH --> AND
@@ -59,7 +65,7 @@ flowchart TD
     GH[GitHub — validation / optional OTA workflow] --> OTA
 ```
 
-The API owns prices, order totals, voucher balances, role checks, cafe ownership, and recipient membership. Client values are never used as authoritative prices. SQLite `BEGIN IMMEDIATE` transactions make issuance, checkout fulfillment, sharing, and voucher deductions atomic. A unique database index protects six-character voucher codes; checkout IDs and idempotency keys prevent repeat fulfillment.
+The API owns prices, order totals, voucher balances, role checks, cafe ownership, and recipient membership. Client values are never used as authoritative prices. MySQL InnoDB transactions and unique indexes protect issuance and balances. The DynamoDB test adapter preserves these domain boundaries with conditional revision checks, atomic transactions, and uniqueness checks. Ordered collections are split into 300 KB binary chunks. It retries conflicting commits and supports nested rollback; it is intended for small test datasets. Checkout IDs and idempotency keys prevent repeat fulfillment.
 
 Money is stored in integer cents. Voucher month/year validity ends at the start of the next month in UTC, and the displayed validity shows the selected month. Checkout reserves vouchers while a card payment is pending, applies the earliest-expiring vouchers first, and deducts balances only on confirmed completion. Cancelled/expired payment sessions release their reservations. Reserved vouchers remain available to fulfillment even if a timely payment's webhook arrives after voucher expiry. An independent provider reconciliation pass handles missed webhooks.
 
@@ -96,13 +102,13 @@ Café food/drink and vouchers redeemable for physical cafe goods use external pa
 
 Copy `.env.example` to `.env` and fill in server settings. `npm run api` / `npm start` load it automatically. Never commit it.
 
-1. Use a verified Resend sending domain and set `RESEND_API_KEY`, `EMAIL_FROM`.
+1. Set `EMAIL_TRANSPORT=smtp`, `SMTP_HOST`, `SMTP_PORT` (465 or 587), `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM`. TLS certificate verification stays enabled. `SMTP_FORCE_IPV4=1` selects IPv4 while preserving the mail hostname for certificate checks. Resend remains optional via `EMAIL_TRANSPORT=resend`.
 2. Set Stripe test keys first. Configure a webhook to `https://YOUR_DOMAIN/api/stripe/webhook`, and set `STRIPE_WEBHOOK_SECRET`.
 3. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and `checkout.session.expired`.
 4. Configure Stripe payment methods, eligible wallets, merchant branding, and any required domain registration. Test with Stripe test-mode cards before enabling live keys.
 5. Set `APP_ORIGIN` to the exact website origin. Production requires HTTPS and real email configuration. Wallet availability depends on device, browser, customer region, and Stripe settings.
 
-The outbox retries transient delivery failures with backoff and exposes failures in administrator logs. Expo push tickets are checked for receipts; unregistered device tokens are removed. Delivery is subject to provider/device behavior, including users disabling OS notifications or force-stopping an Android app.
+The outbox retries transient delivery failures with backoff and exposes failures in administrator logs. On AWS, a serial worker receives immediate dispatches after successful mutations and a one-minute scheduled retry. Expo push tickets are checked for receipts; unregistered device tokens are removed. Delivery is subject to provider/device behavior, including users disabling OS notifications or force-stopping an Android app.
 
 ## Native builds, notifications, and OTA
 
@@ -136,13 +142,17 @@ References: [Expo Updates](https://docs.expo.dev/versions/latest/sdk/updates/), 
 
 ## Server hosting
 
+The requested online test uses AWS Amplify; follow [AWS test deployment](docs/AWS-TEST.md). FTP deployment was cancelled and no FTP upload was performed.
+
+For conventional MySQL hosting:
+
 A Docker image and Caddy HTTPS proxy are provided. Configure DNS and a server with Docker, then set `.env` with `DOMAIN=cafe.example.com`, `APP_ORIGIN=https://cafe.example.com`, `TRUST_PROXY=1`, and the email/payment settings. Keep `DEV_DEMO=0`.
 
 ```sh
 docker compose up --build -d
 ```
 
-The app serves the compiled web UI, API, local design assets, and fonts. Caddy terminates HTTPS. SQLite uses a persistent named volume. Back it up using SQLite's online backup API; test restore procedures before launch. This provision is for one API instance with a local writable volume. Horizontal replicas require shared database coordination and a distributed rate limiter/outbox worker arrangement.
+The app serves the compiled web UI, API, local design assets, and fonts. Caddy terminates HTTPS. MySQL uses a persistent named volume; use MySQL backup/restore tooling. A Node.js runtime is required for this backend. PHP-only hosting cannot execute it. `npm run prepare:hosting` prepares a Node hosting bundle without secrets. Use `APP_BASE_PATH=/cafe` only for subfolder hosting; the Amplify test runs at the domain root.
 
 Free cafes retain orders for six months; paid cafes retain them for 24 months. The cleanup runs at startup and hourly. This is a technical retention policy, not an accounting/archive system. Error logs and outbox entries are retained for up to 30 days; payment reconciliation records remain for idempotency.
 
@@ -152,6 +162,10 @@ App build configurations exported by management provide a name, API URL and cafe
 
 ```sh
 npm run check
+npm run build:aws
+# Optional real database integration; use disposable test infrastructure only:
+# npm run test:mysql
+# AWS_PROFILE=default npm run test:dynamodb
 npx expo install --check
 npx expo export --platform ios --platform android --output-dir native-export
 ```

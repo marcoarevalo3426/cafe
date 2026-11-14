@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import type { Domain, Job, Checkout } from "./domain";
 import { AppError, assert } from "./domain";
 import type { User } from "../src/types";
+import { sendEmail } from "./email";
 export const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
   : null;
@@ -26,8 +27,8 @@ export async function customer(domain: Domain, user: User) {
     { email: user.email, name: user.name || undefined },
     { idempotencyKey: `customer-${user.id}` },
   );
-  domain.db.put("users", {
-    ...domain.db.get<User>("users", user.id)!,
+  await domain.db.put("users", {
+    ...(await domain.db.get<User>("users", user.id))!,
     stripeCustomer: created.id,
   });
   return created.id;
@@ -84,7 +85,7 @@ export async function checkout(
     },
     { idempotencyKey: c.id },
   );
-  domain.db.put("checkouts", { ...c, stripeId: session.id });
+  await domain.db.put("checkouts", { ...c, stripeId: session.id });
   return session.url;
 }
 let working = false;
@@ -92,8 +93,7 @@ export async function processJobs(domain: Domain) {
   if (working) return;
   working = true;
   try {
-    for (const job of domain.db
-      .list<Job>("jobs")
+    for (const job of (await domain.db.list<Job>("jobs"))
       .filter(
         (j) =>
           !j.sentAt && j.attempts < 8 && (j.nextAttempt ?? 0) <= Date.now(),
@@ -102,43 +102,23 @@ export async function processJobs(domain: Domain) {
       try {
         if (job.type === "email") {
           if (domain.demo) {
-            domain.db.put("jobs", { ...job, sentAt: Date.now() });
+            await domain.db.put("jobs", { ...job, sentAt: Date.now() });
             continue;
           }
-          assert(
-            process.env.RESEND_API_KEY && process.env.EMAIL_FROM,
-            "Email delivery is not configured.",
-            503,
-          );
-          const r = await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-              "Content-Type": "application/json",
-              "Idempotency-Key": job.id,
-            },
-            body: JSON.stringify({
-              from: process.env.EMAIL_FROM,
-              to: job.to,
-              subject: job.subject,
-              text: job.message,
-            }),
-            signal: AbortSignal.timeout(15000),
-          });
-          assert(r.ok, "Email provider rejected delivery.", 502);
+          await sendEmail(job);
         } else {
-          const user = domain.db.get<User>("users", job.to);
+          const user = await domain.db.get<User>("users", job.to);
           const announcement = job.data?.kind === "announcement";
           if (
             !user ||
             (announcement ? !user.announcements : !user.orderNotifications)
           ) {
-            domain.db.put("jobs", { ...job, sentAt: Date.now() });
+            await domain.db.put("jobs", { ...job, sentAt: Date.now() });
             continue;
           }
-          const devices = domain.db
-            .list<any>("devices")
-            .filter((d) => d.userId === job.to);
+          const devices = (await domain.db.list<any>("devices")).filter(
+            (d) => d.userId === job.to,
+          );
           for (const device of devices) {
             const r = await fetch("https://exp.host/--/api/v2/push/send", {
               method: "POST",
@@ -161,25 +141,31 @@ export async function processJobs(domain: Domain) {
             assert(r.ok, "Push provider rejected delivery.", 502);
             const ticket: any = await r.json();
             assert(ticket.data?.status === "ok", "Push ticket rejected.", 502);
-            domain.db.put("pushReceipts", {
+            await domain.db.put("pushReceipts", {
               id: ticket.data.id,
               deviceId: device.id,
               createdAt: Date.now(),
             });
           }
         }
-        domain.db.put("jobs", { ...job, sentAt: Date.now(), error: undefined });
+        await domain.db.put("jobs", {
+          ...job,
+          sentAt: Date.now(),
+          error: undefined,
+        });
       } catch (e) {
         const error =
           e instanceof AppError ? e.message : "Delivery service unavailable.";
-        domain.db.put("jobs", {
+        await domain.db.put("jobs", {
           ...job,
           attempts: job.attempts + 1,
           nextAttempt:
             Date.now() + Math.min(3600000, 30000 * 2 ** job.attempts),
           error,
         });
-        domain.log(`${job.type} delivery failed for job ${job.id}: ${error}`);
+        await domain.log(
+          `${job.type} delivery failed for job ${job.id}: ${error}`,
+        );
       }
     }
     await checkReceipts(domain);
@@ -188,8 +174,7 @@ export async function processJobs(domain: Domain) {
   }
 }
 async function checkReceipts(domain: Domain) {
-  const jobs = domain.db
-    .list<any>("pushReceipts")
+  const jobs = (await domain.db.list<any>("pushReceipts"))
     .filter((x) => Date.now() - x.createdAt > 15 * 60 * 1000)
     .slice(0, 100);
   if (!jobs.length) return;
@@ -213,12 +198,12 @@ async function checkReceipts(domain: Domain) {
     for (const j of jobs) {
       const receipt = data?.[j.id];
       if (receipt?.details?.error === "DeviceNotRegistered")
-        domain.db.delete("devices", j.deviceId);
+        await domain.db.delete("devices", j.deviceId);
       if (receipt || Date.now() - j.createdAt > 86400000)
-        domain.db.delete("pushReceipts", j.id);
+        await domain.db.delete("pushReceipts", j.id);
     }
   } catch {
-    domain.log("Could not check push delivery receipts.");
+    await domain.log("Could not check push delivery receipts.");
   }
 }
 
@@ -227,8 +212,7 @@ export async function reconcilePayments(domain: Domain) {
   if (!stripe || reconciling) return;
   reconciling = true;
   try {
-    for (const c of domain.db
-      .list<Checkout>("checkouts")
+    for (const c of (await domain.db.list<Checkout>("checkouts"))
       .filter((c) => c.status === "pending" && c.stripeId)
       .slice(0, 100)) {
       try {
@@ -238,11 +222,11 @@ export async function reconcilePayments(domain: Domain) {
             s.amount_total === c.amount && s.currency === c.currency,
             "Payment amount mismatch.",
           );
-          domain.db.atomic(() => domain.fulfill(c.id));
+          await domain.db.atomic(async () => await domain.fulfill(c.id));
         } else if (s.status === "expired")
-          domain.db.atomic(() => domain.cancelCheckout(c.id));
+          await domain.db.atomic(async () => await domain.cancelCheckout(c.id));
       } catch {
-        domain.log(
+        await domain.log(
           `Payment reconciliation requires attention for checkout ${c.id}.`,
         );
       }

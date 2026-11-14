@@ -18,3 +18,7 @@ credentials.json
 *.p8
 *.p12
 native-export/
+build/
+hosting/
+
+.aws-deployment.json

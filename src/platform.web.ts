@@ -1,4 +1,4 @@
-export const apiBase = "";
+export const apiBase = process.env.APP_BASE_PATH ?? "";
 export const loadToken = async () => null;
 export const saveToken = async (_token: string | null) => {};
 export const nativeHeaders = {};

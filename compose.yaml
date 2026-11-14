@@ -1,4 +1,19 @@
 services:
+  database:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_RANDOM_ROOT_PASSWORD: 'yes'
+    volumes:
+      - cafe-mysql:/var/lib/mysql
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, '127.0.0.1', --silent]
+      interval: 10s
+      timeout: 5s
+      retries: 15
   app:
     build: .
     restart: unless-stopped
@@ -7,11 +22,13 @@ services:
       NODE_ENV: production
       DEV_DEMO: '0'
       HOST: 0.0.0.0
-      DATABASE_PATH: /app/data/cafe.sqlite
-    volumes:
-      - cafe-data:/app/data
+      MYSQL_HOST: database
+      MYSQL_SOCKET: ''
     expose:
       - '4000'
+    depends_on:
+      database:
+        condition: service_healthy
   proxy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -28,6 +45,6 @@ services:
       app:
         condition: service_healthy
 volumes:
-  cafe-data:
+  cafe-mysql:
   caddy-data:
   caddy-config:
