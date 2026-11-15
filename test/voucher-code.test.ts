@@ -24,6 +24,7 @@ async function setup(t: { after: (fn: () => Promise<void>) => void }) {
   });
   const item = (await db.list<MenuItem>("menu"))[0];
   const order = {
+    orderName: "Taylor",
     storeId: "demo-cafe",
     useVouchers: true,
     voucherCode: "bearer",

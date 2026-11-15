@@ -9,6 +9,7 @@ import type { Storage, Otp, Session } from "./storage";
 import { verificationEmail } from "./verification-email";
 import { testEmailSignInEnabled } from "./test-email-sign-in";
 import { adminEmails } from "../src/allowed-accounts";
+import { isOrderName } from "../src/order-name";
 import {
   emailValid,
   type User,
@@ -767,7 +768,7 @@ export class Domain {
         id: id(),
         storeId: c.storeId,
         userId: c.userId,
-        customer: user.name || user.email.split("@")[0],
+        customer: p.orderName ?? (user.name || user.email.split("@")[0]),
         lines: p.lines,
         total: p.total,
         voucherAmount: p.voucherAmount,
@@ -776,6 +777,8 @@ export class Domain {
         payment,
       };
       await this.db.put("orders", order);
+      if (isOrderName(p.orderName))
+        await this.db.put("users", { ...user, lastOrderName: p.orderName });
       const store = (await this.db.get<Store>("stores", c.storeId))!;
       const owner = await this.db.get<User>("users", store.ownerId);
       if (owner?.orderNotifications)
@@ -837,6 +840,10 @@ export class Domain {
       (c) => c.userId === user.id && c.key === key,
     );
     if (existing) return existing;
+    assert(
+      isOrderName(body.orderName),
+      "Enter a name using letters only (maximum 20 characters).",
+    );
     const store = await this.db.get<Store>("stores", body.storeId);
     assert(store, "Cafe not found.", 404);
     assert(
@@ -907,6 +914,7 @@ export class Domain {
       "order",
       store,
       {
+        orderName: body.orderName,
         lines,
         total,
         voucherAmount: total - remaining,

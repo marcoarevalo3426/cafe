@@ -16,6 +16,7 @@ import {
 import { useApp } from "./context";
 import { money, type CartLine, type VerifiedVoucher } from "./types";
 import { VoucherCodeField } from "./VoucherCodeField";
+import { cleanOrderName, isOrderName } from "./order-name";
 import { api, requestKey } from "./api";
 import { externalLink, openLink } from "./platform";
 import {
@@ -26,6 +27,9 @@ import {
 } from "./cart-payment";
 export function MyCafe() {
   const { data, nav, setStoreId } = useApp();
+  const cafes = data.stores.filter(
+    (store) => store.name.trim().toLowerCase() === "gordon",
+  );
   return (
     <Section>
       <Row style={{ flexWrap: "wrap", gap: 16 }}>
@@ -45,7 +49,7 @@ export function MyCafe() {
         >
           <Copy style={{ fontWeight: "600" }}>Buy Vouchers</Copy>
         </Pressable>
-        {data.stores.map((s) => (
+        {cafes.map((s) => (
           <Pressable
             accessibilityRole="button"
             key={s.id}
@@ -68,7 +72,7 @@ export function MyCafe() {
           </Pressable>
         ))}
       </Row>
-      {!data.stores.length && <Empty>No cafes are available yet.</Empty>}
+      {!cafes.length && <Empty>No cafes are available yet.</Empty>}
     </Section>
   );
 }
@@ -269,6 +273,17 @@ export function Cart() {
     [pending, setPending] = useState(""),
     [editIndex, setEditIndex] = useState<number | null>(null);
   const key = useRef(requestKey());
+  const [nameChoice, setNameChoice] = useState<{
+    userId: string;
+    name: string;
+  } | null>(null);
+  const userId = data.user?.id ?? "";
+  const orderName =
+    nameChoice?.userId === userId
+      ? nameChoice.name
+      : isOrderName(data.user?.lastOrderName)
+        ? data.user.lastOrderName
+        : "";
   const [verifiedVoucher, setVerifiedVoucher] =
     useState<VerifiedVoucher | null>(null);
   const store = data.stores.find((s) => s.id === storeId);
@@ -303,10 +318,15 @@ export function Cart() {
   async function submit() {
     await run(async () => {
       if (!cart.length) throw new Error("Your cart is empty.");
+      if (!isOrderName(orderName))
+        throw new Error(
+          "Enter a name using letters only (maximum 20 characters).",
+        );
       const r = await api(
         "/checkout",
         {
           type: "order",
+          orderName,
           storeId,
           lines: cart,
           useVouchers: useVoucher,
@@ -348,6 +368,22 @@ export function Cart() {
         <Empty>Your cart is empty.</Empty>
       ) : (
         <>
+          <Box style={{ gap: 8 }}>
+            <Field
+              label="Name for the order"
+              placeholder="Enter name"
+              value={orderName}
+              editable={!pending}
+              maxLength={20}
+              autoComplete="off"
+              autoCapitalize="words"
+              onChange={(value) => {
+                setNameChoice({ userId, name: cleanOrderName(value) });
+                key.current = requestKey();
+              }}
+            />
+            <Small>Required. Letters only, up to 20 characters.</Small>
+          </Box>
           {rows.map(({ line, index, item, unit, variants }) => (
             <Box
               key={index}
@@ -568,7 +604,10 @@ export function Cart() {
             </>
           ) : (
             <Btn
-              disabled={remaining > 0 && !data.paymentsEnabled}
+              disabled={
+                !isOrderName(orderName) ||
+                (remaining > 0 && !data.paymentsEnabled)
+              }
               onPress={() => void submit()}
             >
               Submit Order
@@ -594,6 +633,7 @@ export function Success() {
       </Copy>
       {order && (
         <Box>
+          <Copy>Name: {order.customer}</Copy>
           {order.lines.map((l, i) => (
             <Copy key={i}>
               {l.quantity} x {l.name} · {l.description}

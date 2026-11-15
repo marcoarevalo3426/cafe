@@ -385,7 +385,7 @@ export function Circle({
   onPress: () => void;
   label: string;
 }) {
-  const asset = kind === "plus" ? "29-678-imgIcon.svg" : "47-1332-imgIcon.svg";
+  const asset = kind === "plus" ? "29-678-imgIcon.svg" : "circle-minus.svg";
   return (
     <Pressable
       accessibilityRole="button"

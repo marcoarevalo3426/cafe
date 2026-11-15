@@ -19,7 +19,7 @@ import { api } from "./api";
 import { money, type MenuItem, type MenuGroup } from "./types";
 const uid = () => Math.random().toString(36).slice(2, 14);
 export default function MenuBuilder() {
-  const { data, run, refresh } = useApp();
+  const { data, run, refresh, scrollToTop } = useApp();
   const [mode, setMode] = useState("templates"),
     [category, setCategory] = useState(""),
     [sub, setSub] = useState(""),
@@ -41,6 +41,7 @@ export default function MenuBuilder() {
     setSub(item.subcategory);
     setGroups(JSON.parse(JSON.stringify(item.groups)));
     setMode("builder");
+    requestAnimationFrame(scrollToTop);
   }
   function groupChange(i: number, update: Partial<MenuGroup>) {
     setGroups(groups.map((g, j) => (j === i ? { ...g, ...update } : g)));

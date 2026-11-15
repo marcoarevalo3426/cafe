@@ -19,6 +19,7 @@ async function draft(d: Domain, customer: User, key = "order-1", quantity = 1) {
     {
       storeId: "demo-cafe",
       useVouchers: true,
+      orderName: "John",
       lines: [
         {
           itemId: item.id,
@@ -239,6 +240,7 @@ test("prices and totals are calculated from the owner menu rather than customer 
         {
           storeId: "demo-cafe",
           total: 1,
+          orderName: "John",
           lines: [
             {
               itemId: item.id,
@@ -264,6 +266,7 @@ test("prices and totals are calculated from the owner menu rather than customer 
             {
               storeId: "demo-cafe",
               lines: [{ itemId: item.id, quantity: 1, selections: {} }],
+              orderName: "John",
             },
             "bad",
           ),

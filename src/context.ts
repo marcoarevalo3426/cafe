@@ -4,6 +4,7 @@ export interface AppContextValue {
   data: Bootstrap;
   refresh: () => Promise<void>;
   nav: (page: string) => void;
+  scrollToTop: () => void;
   page: string;
   run: <T>(fn: () => Promise<T>, success?: string) => Promise<T | undefined>;
   notice: (message: string) => void;

@@ -94,6 +94,9 @@ export default function App() {
   const current = useRef(data);
   current.current = data;
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const scrollToTop = useCallback(() => {
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, []);
   const refresh = useCallback(async () => {
     const n = ++generation.current;
     const next = scopeBootstrap(await api<Bootstrap>("/bootstrap"));
@@ -298,7 +301,7 @@ export default function App() {
         style={{
           flex: 1,
           backgroundColor: "#191919",
-          paddingTop: 24,
+          paddingTop: 19,
           paddingHorizontal: 24,
           gap: 8,
         }}
@@ -307,7 +310,13 @@ export default function App() {
           accessibilityRole="button"
           accessibilityLabel="Close navigation"
           onPress={() => setDrawer(false)}
-          style={{ width: 44, height: 44, justifyContent: "center" }}
+          style={{
+            width: 44,
+            height: 44,
+            justifyContent: "center",
+            alignSelf: "flex-end",
+            marginRight: -10,
+          }}
         >
           <Hamburger light />
         </Pressable>
@@ -427,6 +436,7 @@ export default function App() {
         data,
         refresh,
         nav,
+        scrollToTop,
         page,
         run,
         notice: setMessage,
@@ -475,7 +485,6 @@ export default function App() {
           </Transition>
         ) : (
           <View style={{ flex: 1, flexDirection: "row" }}>
-            {desktop && <View style={{ width: 240 }}>{navigation()}</View>}
             <View
               style={{
                 flex: 1,
@@ -490,24 +499,22 @@ export default function App() {
                   borderBottomWidth: 0,
                 }}
               >
-                {!desktop && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Open navigation"
-                    onPress={() => setDrawer(true)}
-                    style={{
-                      position: "absolute",
-                      top: 19,
-                      ...(owner || admin ? { right: 14 } : { left: 14 }),
-                      width: 44,
-                      height: 44,
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Hamburger />
-                  </Pressable>
-                )}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open navigation"
+                  onPress={() => setDrawer(true)}
+                  style={{
+                    position: "absolute",
+                    top: 19,
+                    right: 14,
+                    width: 44,
+                    height: 44,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Hamburger />
+                </Pressable>
                 {stack.current.length > 0 && page !== home(data) && (
                   <Pressable
                     accessibilityRole="button"
@@ -516,7 +523,7 @@ export default function App() {
                     style={{
                       position: "absolute",
                       top: 20,
-                      ...(owner || admin ? { left: 16 } : { right: 16 }),
+                      left: 16,
                       minHeight: 44,
                       justifyContent: "center",
                     }}
@@ -546,7 +553,7 @@ export default function App() {
                               ? "16-487-imgLine5.svg"
                               : "168-490-imgLine5.svg"
                     }
-                    width={desktop ? width - 240 : width}
+                    width={width}
                     height={1}
                     style={{ position: "absolute", bottom: 0, left: 0 }}
                   />
@@ -625,7 +632,7 @@ export default function App() {
           </View>
         )}
         <Modal
-          visible={drawer && !desktop}
+          visible={drawer}
           transparent
           animationType="none"
           onRequestClose={() => setDrawer(false)}
