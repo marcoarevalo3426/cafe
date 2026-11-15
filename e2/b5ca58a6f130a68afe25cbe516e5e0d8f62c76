@@ -1,0 +1,47 @@
+test/voucher-code.test.ts
+  s_28d8a426d303da::t_595d55a2338a1b 27
+test/domain.test.ts
+  s_28d8a426d303da::t_595d55a2338a1b 22,243,269
+src/types.ts
+  s_28d8a426d303da::t_0d400abd44bd54 7
+src/Customer.tsx
+  s_28d8a426d303da::t_0d400abd44bd54 19,278,379-380,383-384
+  s_28d8a426d303da::t_50a54add1ccb2c 30-32,52,75,276-277,279-286,321-324,329,371-378,381-382,607-608
+  s_28d8a426d303da::t_1ba6959d737005 385-386,609-610,636
+test/order-name.test.ts
+  s_28d8a426d303da::t_595d55a2338a1b 1-58
+  s_28d8a426d303da::t_83355f20bea5ec 59-119
+src/context.ts
+  s_28d8a426d303da::t_ca37e3e5fc7e5f 7
+src/ui.tsx
+  s_28d8a426d303da::t_0d400abd44bd54 388
+src/MenuBuilder.tsx
+  s_28d8a426d303da::t_ca37e3e5fc7e5f 22,44
+server/domain.ts
+  s_28d8a426d303da::t_0d400abd44bd54 12,771,780-781,843
+  s_28d8a426d303da::t_9d96eafee5d35f 844-846,917
+src/order-name.ts
+  s_28d8a426d303da::t_0d400abd44bd54 1-5
+  s_28d8a426d303da::t_273371114215f5 6-7
+public/design/circle-minus.svg
+  s_28d8a426d303da::t_0d400abd44bd54 1-4
+src/App.tsx
+  s_28d8a426d303da::t_ca37e3e5fc7e5f 97-99,313-319,439,502-517
+  s_28d8a426d303da::t_50a54add1ccb2c 304,526,556,635
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2b5ca58a6f130a68afe25cbe516e5e0d8f62c76",
+  "prompts": {},
+  "sessions": {
+    "s_28d8a426d303da": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d1a9-c5bf-71c2-96ca-d3b28f3787d2",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "marcoarevalo <marco.arevalo3426@gmail.com>"
+    }
+  }
+}
